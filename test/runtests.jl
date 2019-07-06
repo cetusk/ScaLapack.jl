@@ -10,93 +10,54 @@ na_rows=2;na_cols=3;
 nb_rows=na_cols;nb_cols=1;
 blocksize=2
 
-A = randn(na_rows, na_cols)
-B = randn(nb_rows, nb_cols)
+A=randn(na_rows,na_cols)
+B=randn(nb_rows,nb_cols)
 
 print("matrix A: $A\n")
 print("matrix B: $B\n")
-print("matrix C: $C\n")
 
 # initialize grid
-id,nprocs = ScaLapack.BLACS.pinfo()
+mGrid,nGrid=size(A.chunks)
+id,nprocs=ScaLapack.BLACS.pinfo()
+ictxt=ScaLapack.BLACS.gridinit(BLACS.get(0,0),'c',mGrid,nGrid)
 
 print("id: $id, nprocs: $nprocs\n")
 
-# ic = ScaLapack.sl_init(trunc(Integer, sqrt(nprocs)), div(nprocs, trunc(Integer, sqrt(nprocs))))
-ictxt = ScaLapack.sl_init(Int64(sqrt(nprocs)), Int64(div(nprocs, sqrt(nprocs))))
+# who am I?
+nrow,ncol,myrow,mycol=ScaLapack.BLACS.gridinfo(ictxt)
+p_nrow=ScaLapack.numroc(na_rows,blocksize,myrow,0,nrow)
+p_ncol=ScaLapack.numroc(na_cols,blocksize,mycol,0,ncol)
+print("myrow: $myrow, mycol: $mycol,
+        blocksize: $blocksize,
+        p_nrow: $p_nrow, p_ncol: $p_ncol\n")
 
-@sync for p in MPI.workers()
-    # initialize grid
-    @spawnat p begin
+#     if nrow >= 0 && ncol >= 0
 
-        # who am I?
-        nprow, npcol, myrow, mycol = ScaLapack.BLACS.gridinfo(ictxt)
-        my_na_rows = ScaLapack.numroc(na_rows, blocksize, myrow, 0, nprow)
-        my_na_cols = ScaLapack.numroc(na_cols, blocksize, mycol, 0, npcol)
-        my_nb_rows = ScaLapack.numroc(nb_rows, blocksize, myrow, 0, nprow)
-        my_nb_cols = ScaLapack.numroc(nb_cols, blocksize, mycol, 0, npcol)
-        print("myrow: $myrow, mycol: $mycol,
-            blocksize: $blocksize,
-            pna_rows: $pna_rows, pna_cols: $pna_cols,
-            pnb_rows: $pnb_rows, pnb_cols: $pnb_cols\n")
+#         print("check: A\n")
 
-        
+#         # Get DArray info
+#         descA=ScaLapack.descinit(p_nrow,p_ncol,blocksize,blocksize,0,0,ictxt,p_ncol)
 
-        lld=9
-        if nprow >= 0 && npcol >= 0
+#         print("check: B\n")
 
-            print("check: A\n")
+#         eigval=Vector{Float64}(undef,blocksize)
+#         eigvec=Matrix{Float64}(undef,blocksize,blocksize)
+#         # eigval,eigvec=ScaLapack.pdstedc!('I',blocksize,
+#         # eigvec,
+#         #                                  Vector{Float64}(undef,blocksize),
+#         #                                  Matrix{Float64}(undef,blocksize,blocksize),
+#         #                                  1,1,descA)
 
-            # Get DArray info
-            descA = ScaLapack.descinit(pna_rows, pna_cols, blocksize, blocksize, 0, 0, ictxt, lld)
-            descB = ScaLapack.descinit(pnb_rows, pnb_cols, blocksize, blocksize, 0, 0, ictxt, lld)
-            descC = ScaLapack.descinit(pna_rows, pnb_cols, blocksize, blocksize, 0, 0, ictxt, lld)
+#         print("check: C\n")
 
+#         # show result
+#         if myrow == 0 && mycol == 0
+#             println(eigval)
+#             println(eigvec)
+#         end
 
-            print("check: B\n")
+#         # clean up
+#         ScaLapack.BLACS.gridexit(ictxt)
 
-
-            # allocate local array
-            # A = float32(randn(Int(np), Int(nq)))
-            # A = complex(randn(Int(np), Int(nq)), randn(Int(np), Int(nq)))
-            # A = complex64(complex(randn(Int(np), Int(nq)), randn(Int(np), Int(nq))))
-
-            # calculate DGEMM
-            tpA='N';tpB='N';
-            m=pna_rows;n=pnb_cols;k=pna_cols;
-            ia=1;ja=1;ib=1;jb=1;ic=1;jc=1;
-
-            idAx=ia+m-1;idAy=ja+k-1;
-            if tpA == 'T'
-                idAx=ia+k-1;idAy=ja+m-1;
-            end
-            idBx=ib+k-1;idBy=jb+n-1;
-            if tpB == 'T'
-                idBx=ib+n-1;idBy=jb+k-1;
-            end
-            idCx=ic+m-1;idCy=jc+n-1
-
-
-            alpha=1.0;beta=1.0;
-            CC = ScaLapack.pdgemm!('N','N',
-                                        m,n,k,alpha,
-                                        A,idAx,idAy,descA,
-                                        B,idBx,idBy,descB,
-                                        beta,
-                                        C,idCx,idCy,descC)
-
-            print("check: C")
-
-
-            # show result
-            if myrow == 0 && mycol == 0
-                println(CC)
-            end
-
-            # clean up
-            tmp = ScaLapack.BLACS.gridexit(ictxt)
-
-end
-ScaLapack.BLACS.exit()
 
 MPI.Finalize()

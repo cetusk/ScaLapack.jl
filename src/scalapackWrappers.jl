@@ -88,7 +88,7 @@ for (fname, elty) in ((:psgemm_, :Float32),
         function pdgemm!(transa::Char, transb::Char, m::Integer, n::Integer, k::Integer, α::$elty, A::Matrix{$elty}, ia::Integer, ja::Integer, desca::Vector{ScaInt}, B::Matrix{$elty}, ib::Integer, jb::Integer, descb::Vector{ScaInt}, β::$elty, C::Matrix{$elty}, ic::Integer, jc::Integer, descc::Vector{ScaInt})
 
             ccall(($(string(fname)), libscalapack), Nothing,
-                (Ptr{UInt8}, Ptr{UInt8}, Ptr{ScaInt}, Ptr{ScaInt},
+                (Ptr{Char}, Ptr{Char}, Ptr{ScaInt}, Ptr{ScaInt},
                  Ptr{ScaInt}, Ptr{$elty}, Ptr{$elty}, Ptr{ScaInt},
                  Ptr{ScaInt}, Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt},
                  Ptr{ScaInt}, Ptr{ScaInt}, Ptr{$elty}, Ptr{$elty},
@@ -117,7 +117,7 @@ for (fname, elty) in ((:psstedc_, :Float32),
 
             for i = 1:2
                 ccall(($(string(fname)), libscalapack), Nothing,
-                    (Ptr{UInt8}, Ptr{UInt8}, Ptr{$elty}, Ptr{$elty},
+                    (Ptr{Char}, Ptr{Char}, Ptr{$elty}, Ptr{$elty},
                      Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
                      Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
                      Ptr{$ScaInt}),
@@ -139,86 +139,91 @@ for (fname, elty) in ((:psstedc_, :Float32),
     end
 end
 
-# # SVD solver
-# for (fname, elty) in ((:psgesvd_, :Float32),
-#                       (:pdgesvd_, :Float64))
-#     @eval begin
-#         function pxgesvd!(jobu::Char, jobvt::Char, m::Integer, n::Integer, A::StridedMatrix{$elty}, ia::Integer, ja::Integer, desca::Vector{ScaInt}, s::StridedVector{$elty}, U::StridedMatrix{$elty}, iu::Integer, ju::Integer, descu::Vector{ScaInt}, Vt::Matrix{$elty}, ivt::Integer, jvt::Integer, descvt::Vector{ScaInt})
-#             # extract values
+# SVD solver
+for (fname, elty) in ((:psgesvd_, :Float32),
+                      (:pdgesvd_, :Float64))
+    @eval begin
+        function pxgesvd!(jobu::Char, jobvt::Char, m::Integer, n::Integer, A::Matrix{$elty}, ia::Integer, ja::Integer, desca::Vector{ScaInt}, s::Vector{$elty}, U::Matrix{$elty}, iu::Integer, ju::Integer, descu::Vector{ScaInt}, Vt::Matrix{$elty}, ivt::Integer, jvt::Integer, descvt::Vector{ScaInt})
+        # function pxgesvd!(jobu::Char, jobvt::Char, m::Integer, n::Integer, A::StridedMatrix{$elty}, ia::Integer, ja::Integer, desca::Vector{ScaInt}, s::StridedVector{$elty}, U::StridedMatrix{$elty}, iu::Integer, ju::Integer, descu::Vector{ScaInt}, Vt::Matrix{$elty}, ivt::Integer, jvt::Integer, descvt::Vector{ScaInt})
+            # extract values
 
-#             # check
+            # allocate
+            info = ScaInt[0]
+            work = $elty[0]
+            lwork = -1
 
-#             # allocate
-#             info = Array(ScaInt, 1)
-#             work = Array($elty, 1)
-#             lwork = -1
+            # ccall
+            for i = 1:2
+                ccall(($(string(fname)), libscalapack), Nothing,
+                    (Ptr{Char}, Ptr{Char}, Ptr{ScaInt}, Ptr{ScaInt},
+                     Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
+                     Ptr{$elty}, Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt},
+                     Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt},
+                     Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}),
+                    Ref(jobu), Ref(jobvt), Ref(m), Ref(n),
+                    A, Ref(ia), Ref(ja), desca,
+                    s, U, Ref(iu), Ref(ju),
+                    descu, Vt, Ref(ivt), Ref(jvt),
+                    descvt, work, Ref(lwork), info)
+                if i == 1
+                    lwork = convert(ScaInt, work[1])
+                    # work = $elty[ 0 for j=1:lwork ]
+                    if lwork != -1
+                        work = $elty[ 0 for j=1:lwork ]
+                    end
+                end
+            end
 
-#             # ccall
-#             for i = 1:2
-#                 ccall(($(string(fname)), libscalapack), Nothing,
-#                     (Ptr{UInt8}, Ptr{UInt8}, Ptr{ScaInt}, Ptr{ScaInt},
-#                      Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
-#                      Ptr{$elty}, Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt},
-#                      Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt},
-#                      Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}),
-#                     &jobu, &jobvt, &m, &n,
-#                     A, &ia, &ja, desca,
-#                     s, U, &iu, &ju,
-#                     descu, Vt, &ivt, &jvt,
-#                     descvt, work, &lwork, info)
-#                 if i == 1
-#                     lwork = convert(ScaInt, work[1])
-#                     work = Array($elty, lwork)
-#                 end
-#             end
+            if 0 < info[1] <= min(m,n)
+                throw(ScaLapackException(info[1]))
+            end
 
-#             if 0 < info[1] <= min(m,n)
-#                 throw(ScaLapackException(info[1]))
-#             end
+            return U, s, Vt
+        end
+    end
+end
+for (fname, elty, relty) in ((:pcgesvd_, :ComplexF32, :Float32),
+                             (:pzgesvd_, :ComplexF64, :Float64))
+    @eval begin
+        function pxgesvd!(jobu::Char, jobvt::Char, m::Integer, n::Integer, A::Matrix{$elty}, ia::Integer, ja::Integer, desca::Vector{ScaInt}, s::Vector{$relty}, U::Matrix{$elty}, iu::Integer, ju::Integer, descu::Vector{ScaInt}, Vt::Matrix{$elty}, ivt::Integer, jvt::Integer, descvt::Vector{ScaInt})
+            # extract values
 
-#             return U, s, Vt
-#         end
-#     end
-# end
-# for (fname, elty, relty) in ((:pcgesvd_, :ComplexF32, :Float32),
-#                              (:pzgesvd_, :ComplexF64, :Float64))
-#     @eval begin
-#         function pxgesvd!(jobu::Char, jobvt::Char, m::Integer, n::Integer, A::Matrix{$elty}, ia::Integer, ja::Integer, desca::Vector{ScaInt}, s::Vector{$relty}, U::Matrix{$elty}, iu::Integer, ju::Integer, descu::Vector{ScaInt}, Vt::Matrix{$elty}, ivt::Integer, jvt::Integer, descvt::Vector{ScaInt})
-#             # extract values
+            # check
 
-#             # check
+            # allocate
+            work = $elty[0]
+            lwork = -1
+            rwork = $relty[ 0 for j=1:(1 + 4*max(m, n)) ]
+            info = ScaInt[0]
 
-#             # allocate
-#             info = Array(ScaInt, 1)
-#             work = Array($elty, 1)
-#             rwork = Array($relty, 1 + 4*max(m, n))
-#             lwork = -1
+            # ccall
+            for i = 1:2
+                ccall(($(string(fname)), libscalapack), Nothing,
+                    (Ptr{Char}, Ptr{Char}, Ptr{ScaInt}, Ptr{ScaInt},
+                     Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
+                     Ptr{$relty}, Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt},
+                     Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt},
+                     Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt}, Ptr{$relty},
+                     Ptr{ScaInt}),
+                    Ref(jobu), Ref(jobvt), Ref(m), Ref(n),
+                    A, Ref(ia), Ref(ja), desca,
+                    s, U, Ref(iu), Ref(ju),
+                    descu, Vt, Ref(ivt), Ref(jvt),
+                    descvt, work, Ref(lwork), rwork,
+                    info)
+                if i == 1
+                    lwork = convert(ScaInt, work[1])
+                    # work = $elty[ 0 for j=1:lwork ]
+                    if lwork != -1
+                        work = $elty[ 0 for j=1:lwork ]
+                    end
+                end
+            end
 
-#             # ccall
-#             for i = 1:2
-#                 ccall(($(string(fname)), libscalapack), Nothing,
-#                     (Ptr{UInt8}, Ptr{UInt8}, Ptr{ScaInt}, Ptr{ScaInt},
-#                      Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
-#                      Ptr{$relty}, Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt},
-#                      Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt},
-#                      Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt}, Ptr{$relty},
-#                      Ptr{ScaInt}),
-#                     &jobu, &jobvt, &m, &n,
-#                     A, &ia, &ja, desca,
-#                     s, U, &iu, &ju,
-#                     descu, Vt, &ivt, &jvt,
-#                     descvt, work, &lwork, rwork,
-#                     info)
-#                 if i == 1
-#                     lwork = convert(ScaInt, work[1])
-#                     work = Array($elty, lwork)
-#                 end
-#             end
+            info[1] > 0 && throw(ScaLapackException(info[1]))
 
-#             info[1] > 0 && throw(ScaLapackException(info[1]))
-
-#             return U, s, Vt
-#         end
-#     end
-# end
+            return U, s, Vt
+        end
+    end
+end
 
