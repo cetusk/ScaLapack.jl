@@ -36,6 +36,7 @@ end
 
 # const libscalapack = "/Users/andreasnoack/Downloads/scalapack-2.0.2/build/lib/libscalapack.dylib"
 const libscalapack = "/usr/local/lib/libscalapack.dylib"
+# const libscalapack = "/usr/local/Cellar/scalapack/2.0.2_15/lib/libscalapack.dylib"
 # const libscalapack = "/usr/lib/libscalapack-openmpi.so"
 
 # push!(LOAD_PATH, libscalapack)

@@ -61,10 +61,11 @@ for (fname, elty) in ((:psgemr2d_, :Float32),
                       (:pdgemr2d_, :Float64),
                       (:pcgemr2d_, :ComplexF32),
                       (:pzgemr2d_, :ComplexF64))
+
     @eval begin
         function pxgemr2d!(m::Integer, n::Integer, A::Matrix{$elty}, ia::Integer, ja::Integer, desca::Vector{ScaInt}, B::Matrix{$elty}, ib::Integer, jb::Integer, descb::Vector{ScaInt}, ictxt::Integer)
 
-            ccall(($(string(fname)), libscalapack), Nothing,
+            ccall((eval(string($fname)), libscalapack), Nothing,
                 (Ptr{ScaInt}, Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt},
                  Ptr{ScaInt}, Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt},
                  Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}),
@@ -142,9 +143,11 @@ end
 # SVD solver
 for (fname, elty) in ((:psgesvd_, :Float32),
                       (:pdgesvd_, :Float64))
+# for (fname, elty) in ((:PSGESVD_, :Float32),
+#                       (:PDGESVD_, :Float64))
+  
     @eval begin
         function pxgesvd!(jobu::Char, jobvt::Char, m::Integer, n::Integer, A::Matrix{$elty}, ia::Integer, ja::Integer, desca::Vector{ScaInt}, s::Vector{$elty}, U::Matrix{$elty}, iu::Integer, ju::Integer, descu::Vector{ScaInt}, Vt::Matrix{$elty}, ivt::Integer, jvt::Integer, descvt::Vector{ScaInt})
-        # function pxgesvd!(jobu::Char, jobvt::Char, m::Integer, n::Integer, A::StridedMatrix{$elty}, ia::Integer, ja::Integer, desca::Vector{ScaInt}, s::StridedVector{$elty}, U::StridedMatrix{$elty}, iu::Integer, ju::Integer, descu::Vector{ScaInt}, Vt::Matrix{$elty}, ivt::Integer, jvt::Integer, descvt::Vector{ScaInt})
             # extract values
 
             # allocate
@@ -167,10 +170,7 @@ for (fname, elty) in ((:psgesvd_, :Float32),
                     descvt, work, Ref(lwork), info)
                 if i == 1
                     lwork = convert(ScaInt, work[1])
-                    # work = $elty[ 0 for j=1:lwork ]
-                    if lwork != -1
-                        work = $elty[ 0 for j=1:lwork ]
-                    end
+                    work = $elty[ 0 for j=1:lwork ]
                 end
             end
 
@@ -187,8 +187,6 @@ for (fname, elty, relty) in ((:pcgesvd_, :ComplexF32, :Float32),
     @eval begin
         function pxgesvd!(jobu::Char, jobvt::Char, m::Integer, n::Integer, A::Matrix{$elty}, ia::Integer, ja::Integer, desca::Vector{ScaInt}, s::Vector{$relty}, U::Matrix{$elty}, iu::Integer, ju::Integer, descu::Vector{ScaInt}, Vt::Matrix{$elty}, ivt::Integer, jvt::Integer, descvt::Vector{ScaInt})
             # extract values
-
-            # check
 
             # allocate
             work = $elty[0]
@@ -213,10 +211,7 @@ for (fname, elty, relty) in ((:pcgesvd_, :ComplexF32, :Float32),
                     info)
                 if i == 1
                     lwork = convert(ScaInt, work[1])
-                    # work = $elty[ 0 for j=1:lwork ]
-                    if lwork != -1
-                        work = $elty[ 0 for j=1:lwork ]
-                    end
+                    work = $elty[ 0 for j=1:lwork ]
                 end
             end
 
