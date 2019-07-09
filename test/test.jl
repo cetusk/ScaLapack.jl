@@ -14,20 +14,26 @@ nb = 2
 
 # initialize grid
 id, nprocs = ScaLapack.BLACS.pinfo()
-ic = ScaLapack.sl_init(trunc(Integer, sqrt(nprocs)), div(nprocs, trunc(Integer, sqrt(nprocs))))
+print("id: $id, nprocs: $nprocs\n")
+nprow=trunc(Integer, sqrt(nprocs))
+npcol=div(nprocs, trunc(Integer, sqrt(nprocs)))
+ictxt = ScaLapack.sl_init(nprow,npcol)
+print("nprow: $nprow, npcol: $npcol, ictxt: $ictxt\n")
 
 # who am I?
-nprow, npcol, myrow, mycol = ScaLapack.BLACS.gridinfo(ic)
+nprow, npcol, myrow, mycol = ScaLapack.BLACS.gridinfo(ictxt)
 np = ScaLapack.numroc(m, nb, myrow, 0, nprow)
 nq = ScaLapack.numroc(n, nb, mycol, 0, npcol)
-print("myrow: $myrow, mycol: $mycol, nb: $nb, np: $np, nq: $nq\n")
+print("nprow: $nprow, npcol: $npcol, ictxt: $ictxt, myrow: $myrow, mycol: $mycol, nb: $nb, np: $np, nq: $nq\n")
 
 if nprow >= 0 && npcol >= 0
     # Get DArray info
-    dA = ScaLapack.descinit(m, n, nb, nb, 0, 0, ic, np)
+    dA = ScaLapack.descinit(m, n, nb, nb, 0, 0, ictxt, np)
+    print("myid=$id: $dA\n")
 
     # allocate local array
-    A = randn(Int(np), Int(nq))
+    A = randn(Int64(np), Int64(nq))
+    print("myid=$id: $A\n")
     # A = float32(randn(Int(np), Int(nq)))
     # A = complex(randn(Int(np), Int(nq)), randn(Int(np), Int(nq)))
     # A = complex64(complex(randn(Int(np), Int(nq)), randn(Int(np), Int(nq))))
@@ -39,11 +45,11 @@ if nprow >= 0 && npcol >= 0
 
     # show result
     if myrow == 0 && mycol == 0
-        println(s[1:3])
+        # println(s[1:3])
     end
 
     # clean up
-    tmp = ScaLapack.BLACS.gridexit(ic)
+    tmp = ScaLapack.BLACS.gridexit(ictxt)
 
 end
 ScaLapack.BLACS.exit()

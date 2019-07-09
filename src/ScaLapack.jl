@@ -3,17 +3,15 @@
 module ScaLapack
 
 using Compat
-
-# using Base.LinAlg: BlasFloat, BlasReal
 using LinearAlgebra: BlasFloat, BlasReal
 
 using MPI
 using DistributedArrays, Distributed
-
 import DistributedArrays: DArray, defaultdist
+
 # this should only be a temporary solution until procs returns a type that encodes more information about the processes
 DArray(init, dims, manager::MPIManager, args...) = DArray(init, dims, collect(values(manager.mpi2j))[sortperm(collect(keys(manager.mpi2j)))], args...)
-function defaultdist(sz::Int, nc::Int)
+function defaultdist(sz::Integer, nc::Integer)
     if sz >= nc
         d, r = divrem(sz, nc)
         if r == 0
@@ -31,18 +29,12 @@ if myid() > 1
 end
 
 struct ScaLapackException <: Exception
-    info::Int32
+    info::Integer
 end
 
-# const libscalapack = "/Users/andreasnoack/Downloads/scalapack-2.0.2/build/lib/libscalapack.dylib"
 const libscalapack = "/usr/local/lib/libscalapack.dylib"
-# const libscalapack = "/usr/local/Cellar/scalapack/2.0.2_15/lib/libscalapack.dylib"
-# const libscalapack = "/usr/lib/libscalapack-openmpi.so"
-
-# push!(LOAD_PATH, libscalapack)
 
 include("blacs.jl")
 include("scalapackWrappers.jl")
-# include("convenience.jl")
 
 end # module

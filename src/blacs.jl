@@ -2,13 +2,10 @@ module BLACS
 
 const BlaInt = Int64
 
-# const libscalapack = "/usr/local/lib/libscalapack.dylib"
-
-# using ..libscalapack
 import ..libscalapack
 
 function get(icontxt::Integer, what::Integer)
-    val = BlaInt[0]
+    val = zeros(BlaInt,1)
     ccall((:blacs_get_, libscalapack), Nothing,
         (Ptr{BlaInt}, Ptr{BlaInt}, Ptr{BlaInt}),
         Ref(icontxt), Ref(what), val)
@@ -16,15 +13,15 @@ function get(icontxt::Integer, what::Integer)
 end
 
 function gridinit(icontxt::Integer, order::Char, nprow::Integer, npcol::Integer)
-    icontxta = BlaInt[icontxt]
+    icontxta = zeros(BlaInt,icontxt)
     ccall((:blacs_gridinit_, libscalapack), Nothing,
-        (Ptr{BlaInt}, Ptr{UInt8}, Ptr{BlaInt}, Ptr{BlaInt}),
+        (Ptr{BlaInt}, Ptr{Char}, Ptr{BlaInt}, Ptr{BlaInt}),
         icontxta, Ref(order), Ref(nprow), Ref(npcol))
     icontxta[1]
 end
 
 function pinfo()
-    mypnum, nprocs = BlaInt[0], BlaInt[0]
+    mypnum, nprocs = zeros(BlaInt,1), zeros(BlaInt,1)
     ccall((:blacs_pinfo_, libscalapack), Nothing,
         (Ptr{BlaInt}, Ptr{BlaInt}),
         mypnum, nprocs)
@@ -32,10 +29,10 @@ function pinfo()
 end
 
 function gridinfo(ictxt::Integer)
-    nprow = BlaInt[0]
-    npcol = BlaInt[0]
-    myprow = BlaInt[0]
-    mypcol = BlaInt[0]
+    nprow = zeros(BlaInt,1)
+    npcol = zeros(BlaInt,1)
+    myprow = zeros(BlaInt,1)
+    mypcol = zeros(BlaInt,1)
     ccall((:blacs_gridinfo_, libscalapack), Nothing,
         (Ptr{BlaInt}, Ptr{BlaInt}, Ptr{BlaInt}, Ptr{BlaInt}, Ptr{BlaInt}),
         Ref(ictxt), nprow, npcol, myprow, mypcol)
