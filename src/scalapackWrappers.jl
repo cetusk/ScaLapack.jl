@@ -1,27 +1,32 @@
 
 const ScaInt = Int64
+f_pchar(scope::Char) = transcode(UInt8, string(scope))
 
-#############
-# Auxiliary #
-#############
-
-# Initialize
+# input : num of rows and cols in the process grid
+# output: BLACS context
 function sl_init(nprow::Integer, npcol::Integer)
-    ictxt = zeros(ScaInt,1)
+    ctxt = zeros(ScaInt,1)
     ccall((:sl_init_, libscalapack), Nothing,
         (Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}),
-        ictxt, Ref(nprow), Ref(npcol))
-    return ictxt[1]
+        ctxt, Ref(nprow), Ref(npcol))
+    return ctxt[1]
 end
 
-# Calculate size of local array
+# input : num of rows/cols, num of rows/cols in its block
+#         num of process rows and cols in the current process id
+#         head grid address of its process grid
+#         num of process grid
+# output: num of process rows and cols in the current process id
 function numroc(n::Integer, nb::Integer, iproc::Integer, isrcproc::Integer, nprocs::Integer)
-    ccall((:numroc_, libscalapack), ScaInt,
-        (Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}),
-        Ref(n), Ref(nb), Ref(iproc), Ref(isrcproc), Ref(nprocs))
+    return ccall((:numroc_, libscalapack), ScaInt,
+                (Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}),
+                Ref(n), Ref(nb), Ref(iproc), Ref(isrcproc), Ref(nprocs))
 end
 
-# Array descriptor
+# input : num of rows/cols, num of rows/cols in its block
+#         head grid address of its process grid
+#         BLACS context, maximum local leading dimension ( mxlld )
+# output: array descriptor
 function descinit(m::Integer, n::Integer, mb::Integer, nb::Integer, irsrc::Integer, icsrc::Integer, ictxt::Integer, lld::Integer)
 
     # extract values
@@ -55,169 +60,90 @@ function descinit(m::Integer, n::Integer, mb::Integer, nb::Integer, irsrc::Integ
     return desc
 end
 
-# Redistribute arrays
-for (fname, elty) in ((:psgemr2d_, :Float32),
-                      (:pdgemr2d_, :Float64),
-                      (:pcgemr2d_, :ComplexF32),
-                      (:pzgemr2d_, :ComplexF64))
-
+# input : row/col index in the global array A indicating the first row of sub(A)
+#         ( will be updated ! ) array descriptor for the distributed matrix A
+#         scalar alpha which will be substituted into the A
+# output: nothing
+for (fname, elty) in ((:pselset_, :Float32),
+                      (:pdelset_, :Float64),
+                      (:pcelset_, :ComplexF32),
+                      (:pzelset_, :ComplexF64))
     @eval begin
-        function pxgemr2d!(m::Integer, n::Integer, A::Matrix{$elty}, ia::Integer, ja::Integer, desca::Vector{ScaInt}, B::Matrix{$elty}, ib::Integer, jb::Integer, descb::Vector{ScaInt}, ictxt::Integer)
-
+        function pXelset!(A::Matrix{$elty}, ia::Integer, ja::Integer, desca::Vector{ScaInt}, α::$elty)
             ccall(($(string(fname)), libscalapack), Nothing,
-                (Ptr{ScaInt}, Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt},
-                 Ptr{ScaInt}, Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt},
-                 Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}),
-                 Ref(m), Ref(n), A, Ref(ia),
-                 Ref(ja), desca, B, Ref(ib),
-                 Ref(jb), descb, Ref(ictxt))
+                (Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{$elty}),
+                A, Ref(ia), Ref(ja), desca, Ref(α))
         end
     end
 end
 
-##################
-# Linear Algebra #
-##################
+# input : BLACS scope in which alpha is returned
+#         topology to be used if broadcast is needed
+#         distributed matrix A
+#         row/col index in the global array A
+#         array descriptor for the distributed matrix A
+# output: scalar alpha which will be returned from the A
+for (fname, elty) in ((:pselget_, :Float32),
+                      (:pdelget_, :Float64),
+                      (:pcelget_, :ComplexF32),
+                      (:pzelget_, :ComplexF64))
+    @eval begin
+        function pXelget(scope::Char, top::Char, A::Matrix{$elty}, ia::Integer, ja::Integer, desca::Vector{ScaInt})
+            α = zeros($elty,1)
+            ccall(($(string(fname)), libscalapack), Nothing,
+                  (Ptr{Char}, Ptr{Char}, Ptr{$elty}, Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}),
+                  f_pchar(scope), f_pchar(top), α, A, Ref(ia), Ref(ja), desca)
+            return α[1]
+        end
+    end
+end
 
-# Matmul
+# input : BLACS scope to operate; op(X) = X or X' or X*'
+#         grid indices of the inputted global matrices
+#         coefficients
+#         local matrices, grid indices of the local matrices
+#         array descriptors for the distributed matrices
+# output: nothing
+# === detail ===
+# op(X) = X or X' or X*'
+# sub(A) = A[ia:ia+m-1,ja:ja+k-1]
+# sub(B) = B[ib:ib+k-1,jb:jb+n-1]
+# sub(C) = C[ic:ic+m-1,jc:jc+n-1]
+#        = α*op(sub(A))*op(sub(B))+β*sub(C)
+# op(sub(A)) denotes A[ia:ia+m-1,ja:ja+k-1]   if transa = 'n',
+#                    A[ia:ia+k-1,ja:ja+m-1]'  if transa = 't',
+#                    A[ia:ia+k-1,ja:ja+m-1]*' if transa = 'c',
+# op(sub(B)) denotes B[ib:ib+k-1,jb:jb+n-1]   if transb = 'n',
+#                    B[ib:ib+n-1,jb:jb+k-1]'  if transb = 't',
+#                    B[ib:ib+n-1,jb:jb+k-1]*' if transb = 'c',
 for (fname, elty) in ((:psgemm_, :Float32),
                       (:pdgemm_, :Float64),
                       (:pcgemm_, :ComplexF32),
                       (:pzgemm_, :ComplexF64))
     @eval begin
-        function pdgemm!(transa::Char, transb::Char, m::Integer, n::Integer, k::Integer, α::$elty, A::Matrix{$elty}, ia::Integer, ja::Integer, desca::Vector{ScaInt}, B::Matrix{$elty}, ib::Integer, jb::Integer, descb::Vector{ScaInt}, β::$elty, C::Matrix{$elty}, ic::Integer, jc::Integer, descc::Vector{ScaInt})
+        function pXgemm!(transa::Char, transb::Char,
+                         m::Integer, n::Integer, k::Integer,
+                         α::$elty,
+                         A::Matrix{$elty}, ia::Integer, ja::Integer, desca::Vector{ScaInt},
+                         B::Matrix{$elty}, ib::Integer, jb::Integer, descb::Vector{ScaInt},
+                         β::$elty,
+                         C::Matrix{$elty}, ic::Integer, jc::Integer, descc::Vector{ScaInt})
 
             ccall(($(string(fname)), libscalapack), Nothing,
-                (Ptr{Char}, Ptr{Char}, Ptr{ScaInt}, Ptr{ScaInt},
-                 Ptr{ScaInt}, Ptr{$elty}, Ptr{$elty}, Ptr{ScaInt},
-                 Ptr{ScaInt}, Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt},
-                 Ptr{ScaInt}, Ptr{ScaInt}, Ptr{$elty}, Ptr{$elty},
-                 Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}),
-                 Ref(transa), Ref(transb), Ref(m), Ref(n),
-                 Ref(k), Ref(α), A, Ref(ia),
-                 Ref(ja), desca, B, Ref(ib),
-                 Ref(jb), descb, Ref(β), C,
-                 Ref(ic), Ref(jc), descc)
+                (Ptr{Char}, Ptr{Char},
+                 Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
+                 Ptr{$elty},
+                 Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
+                 Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
+                 Ptr{$elty},
+                 Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}),
+                 f_pchar(transa), f_pchar(transb),
+                 Ref(m), Ref(n), Ref(k),
+                 Ref(α),
+                 A, Ref(ia), Ref(ja), desca, 
+                 B, Ref(ib), Ref(jb), descb,
+                 Ref(β),
+                 C, Ref(ic), Ref(jc), descc)
         end
     end
 end
-
-# Eigensolves
-for (fname, elty) in ((:psstedc_, :Float32),
-                      (:pdstedc_, :Float64))
-    @eval begin
-        function pxstedc!(compz::Char, n::Integer, d::Vector{$elty}, e::Vector{$elty}, Q::Matrix{$elty}, iq::Integer, jq::Integer, descq::Vector{ScaInt})
-
-
-            work    = zeros($elty,1)
-            lwork   = convert(ScaInt, -1)
-            iwork   = zeros(ScaInt,1)
-            liwork  = convert(ScaInt, -1)
-            info    = zeros(ScaInt,1)
-
-            for i = 1:2
-                ccall(($(string(fname)), libscalapack), Nothing,
-                    (Ptr{Char}, Ptr{Char}, Ptr{$elty}, Ptr{$elty},
-                     Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
-                     Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
-                     Ptr{$ScaInt}),
-                     Ref(compz), Ref(n), d, e,
-                    Q, Ref(iq), Ref(jq), descq,
-                    work, Ref(lwork), iwork, Ref(liwork),
-                    info)
-
-                if i == 1
-                    lwork = convert(ScaInt, work[1])
-                    work = zeros($elty,lwork)
-                    liwork = convert(ScaInt, iwork[1])
-                    iwork = zeros(ScaInt,liwork)
-                end
-            end
-
-            return d, Q
-        end
-    end
-end
-
-# SVD solver
-for (fname, elty) in ((:psgesvd_, :Float32),
-                      (:pdgesvd_, :Float64))
-  
-    @eval begin
-        function pxgesvd!(jobu::Char, jobvt::Char, m::Integer, n::Integer, A::Matrix{$elty}, ia::Integer, ja::Integer, desca::Vector{ScaInt}, s::Vector{$elty}, U::Matrix{$elty}, iu::Integer, ju::Integer, descu::Vector{ScaInt}, Vt::Matrix{$elty}, ivt::Integer, jvt::Integer, descvt::Vector{ScaInt})
-            # extract values
-
-            # allocate
-            info = zeros(ScaInt,1)
-            work = zeros($elty,1)
-            lwork = -1
-
-            print($(string(fname)))
-
-            # ccall
-            for i = 1:2
-                ccall(($(string(fname)), libscalapack), Nothing,
-                    (Ptr{Char}, Ptr{Char}, Ptr{ScaInt}, Ptr{ScaInt},
-                     Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
-                     Ptr{$elty}, Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt},
-                     Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt},
-                     Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}),
-                    Ref(jobu), Ref(jobvt), Ref(m), Ref(n),
-                    A, Ref(ia), Ref(ja), desca,
-                    s, U, Ref(iu), Ref(ju),
-                    descu, Vt, Ref(ivt), Ref(jvt),
-                    descvt, work, Ref(lwork), info)
-                if i == 1
-                    lwork = convert(ScaInt, work[1])
-                    work = zeros($elty,lwork)
-                end
-            end
-
-            if 0 < info[1] <= min(m,n)
-                throw(ScaLapackException(info[1]))
-            end
-
-            return U, s, Vt
-        end
-    end
-end
-for (fname, elty, relty) in ((:pcgesvd_, :ComplexF32, :Float32),
-                             (:pzgesvd_, :ComplexF64, :Float64))
-    @eval begin
-        function pxgesvd!(jobu::Char, jobvt::Char, m::Integer, n::Integer, A::Matrix{$elty}, ia::Integer, ja::Integer, desca::Vector{ScaInt}, s::Vector{$relty}, U::Matrix{$elty}, iu::Integer, ju::Integer, descu::Vector{ScaInt}, Vt::Matrix{$elty}, ivt::Integer, jvt::Integer, descvt::Vector{ScaInt})
-            # extract values
-
-            # allocate
-            work = zeros($elty,1)
-            lwork = -1
-            rwork = zeros($relty,1+4*max(m, n))
-            info = zeros(ScaInt,1)
-
-            # ccall
-            for i = 1:2
-                ccall(($(string(fname)), libscalapack), Nothing,
-                    (Ptr{Char}, Ptr{Char}, Ptr{ScaInt}, Ptr{ScaInt},
-                     Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
-                     Ptr{$relty}, Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt},
-                     Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt},
-                     Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt}, Ptr{$relty},
-                     Ptr{ScaInt}),
-                    Ref(jobu), Ref(jobvt), Ref(m), Ref(n),
-                    A, Ref(ia), Ref(ja), desca,
-                    s, U, Ref(iu), Ref(ju),
-                    descu, Vt, Ref(ivt), Ref(jvt),
-                    descvt, work, Ref(lwork), rwork,
-                    info)
-                if i == 1
-                    lwork = convert(ScaInt, work[1])
-                    work = zeros($elty,lwork)
-                end
-            end
-
-            info[1] > 0 && throw(ScaLapackException(info[1]))
-
-            return U, s, Vt
-        end
-    end
-end
-
