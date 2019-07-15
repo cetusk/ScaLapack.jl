@@ -1,5 +1,5 @@
-using ScaLapack
 using MPI
+using ScaLapack
 
 const DEBUG = true
 
@@ -8,8 +8,8 @@ const nrows = 8
 const ncols = 5
 const nrows_block = 2
 const ncols_block = 2
-const nprocrows = 1
-const nproccols = 1
+const nprocrows = 2
+const nproccols = 2
 
 # finalizer
 function mpi_finalizer(comm)
@@ -178,14 +178,14 @@ function main()
     params = ScaLapack.ScaLapackParams(nrows_block, ncols_block, nprocrows, nproccols)
     slm_A = ScaLapack.ScaLapackMatrix(params, A)
     slm_B = ScaLapack.ScaLapackMatrix(params, B)
-    C = slm_A * slm_B
+    slm_C = slm_A * slm_B
     # C = ScaLapack.multiple(A, B, nrows_block, ncols_block, nprocrows, nproccols)
     if DEBUG
         if rank == 0
             print("\noutput matrix:\n")
         end
         MPI.Barrier(comm)
-        print("\nrank[$rank];\nC = \n$C.X\n")
+        print("\nrank[$rank];\nC = \n$(slm_C.X)\n")
     end
 
     MPI.Barrier(comm)

@@ -1,4 +1,3 @@
-# using MPI
 
 module ScaLapack
 
