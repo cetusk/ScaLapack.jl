@@ -8,8 +8,8 @@ const nrows = 8
 const ncols = 5
 const nrows_block = 2
 const ncols_block = 2
-const nprocrows = 2
-const nproccols = 2
+const nprocrows = 1
+const nproccols = 1
 
 # finalizer
 function mpi_finalizer(comm)
@@ -21,11 +21,11 @@ function check_scalapack(A, B)
     # initialize BLACS
     rank, nprocs = ScaLapack.BLACS.pinfo()
     # initialize BLACS context
-    input_blacs_contxt = 0
-    blacs_indicator = 0
-    blacs_layout = 'R'
-    blacs_contxt = ScaLapack.BLACS.get(input_blacs_contxt, blacs_indicator)
-    blacs_contxt = ScaLapack.BLACS.gridinit(blacs_contxt, blacs_layout, nprocrows, nproccols)
+    # input_blacs_contxt = 0
+    # blacs_indicator = 0
+    # blacs_layout = 'R'
+    # blacs_contxt = ScaLapack.BLACS.get(input_blacs_contxt, blacs_indicator)
+    # blacs_contxt = ScaLapack.BLACS.gridinit(blacs_contxt, blacs_layout, nprocrows, nproccols)
 
     # initialize ScaLapack context
     sl_contxt = ScaLapack.sl_init(nprocrows, nproccols)
@@ -61,7 +61,6 @@ function check_scalapack(A, B)
         # generate process matrix
         my_A = zeros(Float64,mxllda,mxlocc)
         my_B = zeros(Float64,mxllda,mxlocc)
-
         for ia::Integer=1:nrows
             for ja::Integer=1:ncols
                 ScaLapack.pXelset!(my_A,ia,ja,desca,A[ia,ja])
@@ -166,7 +165,7 @@ function main()
 
     if DEBUG
         if rank == 0
-            print("\ninput matrix:")
+            print("\ninput matrix:\n")
         end
         MPI.Barrier(comm)
         print("\nrank[$rank];\nA = \n$A\nB = \n$B\n")
@@ -174,8 +173,21 @@ function main()
     MPI.Barrier(comm)
 
     # test
-    check_scalapack(A, B)
-    
+    # check_scalapack(A, B)
+
+    params = ScaLapack.ScaLapackParams(nrows_block, ncols_block, nprocrows, nproccols)
+    slm_A = ScaLapack.ScaLapackMatrix(params, A)
+    slm_B = ScaLapack.ScaLapackMatrix(params, B)
+    C = slm_A * slm_B
+    # C = ScaLapack.multiple(A, B, nrows_block, ncols_block, nprocrows, nproccols)
+    if DEBUG
+        if rank == 0
+            print("\noutput matrix:\n")
+        end
+        MPI.Barrier(comm)
+        print("\nrank[$rank];\nC = \n$C.X\n")
+    end
+
     MPI.Barrier(comm)
 
     # clean up

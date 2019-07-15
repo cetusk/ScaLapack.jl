@@ -1,10 +1,14 @@
 
+# depend on envionment
+# const ScaInt = Int32
 const ScaInt = Int64
+
+# enicode encoded array to input ccall
 f_pchar(scope::Char) = transcode(UInt8, string(scope))
 
 # input : num of rows and cols in the process grid
 # output: BLACS context
-function sl_init(nprow::Integer, npcol::Integer)
+function sl_init(nprow::ScaInt, npcol::ScaInt)
     ctxt = zeros(ScaInt,1)
     ccall((:sl_init_, libscalapack), Nothing,
         (Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}),
@@ -17,7 +21,7 @@ end
 #         head grid address of its process grid
 #         num of process grid
 # output: num of process rows and cols in the current process id
-function numroc(n::Integer, nb::Integer, iproc::Integer, isrcproc::Integer, nprocs::Integer)
+function numroc(n::ScaInt, nb::ScaInt, iproc::ScaInt, isrcproc::ScaInt, nprocs::ScaInt)
     return ccall((:numroc_, libscalapack), ScaInt,
                 (Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}),
                 Ref(n), Ref(nb), Ref(iproc), Ref(isrcproc), Ref(nprocs))
@@ -27,26 +31,9 @@ end
 #         head grid address of its process grid
 #         BLACS context, maximum local leading dimension ( mxlld )
 # output: array descriptor
-function descinit(m::Integer, n::Integer, mb::Integer, nb::Integer, irsrc::Integer, icsrc::Integer, ictxt::Integer, lld::Integer)
-
-    # extract values
-    nprow, npcol, myrow, mycol = BLACS.gridinfo(ictxt)
-    locrm = numroc(m, mb, myrow, irsrc, nprow)
-
-    # checks
-    m >= 0 || throw(ArgumentError("first dimension must be non-negative"))
-    n >= 0 || throw(ArgumentError("second dimension must be non-negative"))
-    mb > 0 || throw(ArgumentError("first dimension blocking factor must be positive"))
-    nb > 0 || throw(ArgumentError("second dimension blocking factor must be positive"))
-    0 <= irsrc < nprow || throw(ArgumentError("process row must be positive and less that grid size"))
-    0 <= icsrc < npcol || throw(ArgumentError("process column must be positive and less that grid size"))
-    # lld >= locrm || throw(ArgumentError("leading dimension of local array is too small"))
-
-    # allocation
+function descinit(m::ScaInt, n::ScaInt, mb::ScaInt, nb::ScaInt, irsrc::ScaInt, icsrc::ScaInt, ictxt::ScaInt, lld::ScaInt)
     desc = zeros(ScaInt,9)
     info = zeros(ScaInt,1)
-
-    # ccall
     ccall((:descinit_, libscalapack), Nothing,
         (Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
          Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
@@ -54,9 +41,7 @@ function descinit(m::Integer, n::Integer, mb::Integer, nb::Integer, irsrc::Integ
         desc, Ref(m), Ref(n), Ref(mb),
         Ref(nb), Ref(irsrc), Ref(icsrc), Ref(ictxt),
         Ref(lld), info)
-
     info[1] == 0 || error("input argument $(info[1]) has illegal value")
-
     return desc
 end
 
@@ -69,7 +54,7 @@ for (fname, elty) in ((:pselset_, :Float32),
                       (:pcelset_, :ComplexF32),
                       (:pzelset_, :ComplexF64))
     @eval begin
-        function pXelset!(A::Matrix{$elty}, ia::Integer, ja::Integer, desca::Vector{ScaInt}, α::$elty)
+        function pXelset!(A::Matrix{$elty}, ia::ScaInt, ja::ScaInt, desca::Vector{ScaInt}, α::$elty)
             ccall(($(string(fname)), libscalapack), Nothing,
                 (Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{$elty}),
                 A, Ref(ia), Ref(ja), desca, Ref(α))
@@ -88,7 +73,7 @@ for (fname, elty) in ((:pselget_, :Float32),
                       (:pcelget_, :ComplexF32),
                       (:pzelget_, :ComplexF64))
     @eval begin
-        function pXelget(scope::Char, top::Char, A::Matrix{$elty}, ia::Integer, ja::Integer, desca::Vector{ScaInt})
+        function pXelget(scope::Char, top::Char, A::Matrix{$elty}, ia::ScaInt, ja::ScaInt, desca::Vector{ScaInt})
             α = zeros($elty,1)
             ccall(($(string(fname)), libscalapack), Nothing,
                   (Ptr{Char}, Ptr{Char}, Ptr{$elty}, Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}),
@@ -122,12 +107,12 @@ for (fname, elty) in ((:psgemm_, :Float32),
                       (:pzgemm_, :ComplexF64))
     @eval begin
         function pXgemm!(transa::Char, transb::Char,
-                         m::Integer, n::Integer, k::Integer,
+                         m::ScaInt, n::ScaInt, k::ScaInt,
                          α::$elty,
-                         A::Matrix{$elty}, ia::Integer, ja::Integer, desca::Vector{ScaInt},
-                         B::Matrix{$elty}, ib::Integer, jb::Integer, descb::Vector{ScaInt},
+                         A::Matrix{$elty}, ia::ScaInt, ja::ScaInt, desca::Vector{ScaInt},
+                         B::Matrix{$elty}, ib::ScaInt, jb::ScaInt, descb::Vector{ScaInt},
                          β::$elty,
-                         C::Matrix{$elty}, ic::Integer, jc::Integer, descc::Vector{ScaInt})
+                         C::Matrix{$elty}, ic::ScaInt, jc::ScaInt, descc::Vector{ScaInt})
 
             ccall(($(string(fname)), libscalapack), Nothing,
                 (Ptr{Char}, Ptr{Char},

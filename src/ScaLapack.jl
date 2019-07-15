@@ -35,6 +35,7 @@ end
 const libscalapack = "/usr/local/lib/libscalapack.dylib"
 
 include("blacs.jl")
-include("scalapackWrappers.jl")
+include("scalapack_wrappers.jl")
+include("scalapack_lite.jl")
 
 end # module
