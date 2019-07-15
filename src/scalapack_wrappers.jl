@@ -1,11 +1,4 @@
 
-# depend on envionment
-# const ScaInt = Int32
-const ScaInt = Int64
-
-# enicode encoded array to input ccall
-f_pchar(scope::Char) = transcode(UInt8, string(scope))
-
 # input : num of rows and cols in the process grid
 # output: BLACS context
 function sl_init(nprow::ScaInt, npcol::ScaInt)
@@ -132,3 +125,4 @@ for (fname, elty) in ((:psgemm_, :Float32),
         end
     end
 end
+

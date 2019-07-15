@@ -1,22 +1,12 @@
-module BLACS
-
-# depend on envionment
-# const BlaInt = Int32
-const BlaInt = Int64
-
-# enicode encoded array to input ccall
-f_pchar(scope::Char) = transcode(UInt8, string(scope))
-
-import ..libscalapack
 
 # https://software.intel.com/en-us/mkl-developer-reference-c-blacs-pinfo
 # https://searchcode.com/file/21350024/blacs/BLACS-openmpi/SRC/MPI/blacs_pinfo_.c
 # input : nothing
 # output: rank, num of processes
 function pinfo()
-    mypnum, nprocs = zeros(BlaInt,1), zeros(BlaInt,1)
+    mypnum, nprocs = zeros(ScaInt,1), zeros(ScaInt,1)
     ccall((:blacs_pinfo_, libscalapack), Nothing,
-        (Ptr{BlaInt}, Ptr{BlaInt}),
+        (Ptr{ScaInt}, Ptr{ScaInt}),
         mypnum, nprocs)
     return mypnum[1], nprocs[1]
 end
@@ -26,10 +16,10 @@ end
 # input : BLACS context ( MPI communicator )
 #         BLACS indicator for BLACS contxt which should be returned
 # output: BLACS context
-function get(icontxt::BlaInt, what::BlaInt)
-    val = zeros(BlaInt,1)
+function get(icontxt::ScaInt, what::ScaInt)
+    val = zeros(ScaInt,1)
     ccall((:blacs_get_, libscalapack), Nothing,
-        (Ptr{BlaInt}, Ptr{BlaInt}, Ptr{BlaInt}),
+        (Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}),
         Ref(icontxt), Ref(what), val)
     return val[1]
 end
@@ -40,10 +30,10 @@ end
 #         BLACS layout; how to map processes to BLACS grid
 #         num of rows and cols in the process grid
 # output: BLACS context
-function gridinit(icontxt::BlaInt, layout::Char, nprow::BlaInt, npcol::BlaInt)
-    ocontxt = Array{BlaInt,1}([icontxt])
+function gridinit(icontxt::ScaInt, layout::Char, nprow::ScaInt, npcol::ScaInt)
+    ocontxt = Array{ScaInt,1}([icontxt])
     ccall((:blacs_gridinit_, libscalapack), Nothing,
-        (Ptr{BlaInt}, Ptr{Char}, Ptr{BlaInt}, Ptr{BlaInt}),
+        (Ptr{ScaInt}, Ptr{Char}, Ptr{ScaInt}, Ptr{ScaInt}),
         ocontxt, f_pchar(layout), Ref(nprow), Ref(npcol))
     return ocontxt[1]
 end
@@ -53,13 +43,13 @@ end
 # input : BLACS context
 # output: num of process rows and cols in the current process id
 #         row and col coordinate in the current process id
-function gridinfo(icontxt::BlaInt)
-    nprow = zeros(BlaInt,1)
-    npcol = zeros(BlaInt,1)
-    myrow = zeros(BlaInt,1)
-    mycol = zeros(BlaInt,1)
+function gridinfo(icontxt::ScaInt)
+    nprow = zeros(ScaInt,1)
+    npcol = zeros(ScaInt,1)
+    myrow = zeros(ScaInt,1)
+    mycol = zeros(ScaInt,1)
     ccall((:blacs_gridinfo_, libscalapack), Nothing,
-        (Ptr{BlaInt}, Ptr{BlaInt}, Ptr{BlaInt}, Ptr{BlaInt}, Ptr{BlaInt}),
+        (Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}),
         Ref(icontxt), nprow, npcol, myrow, mycol)
     return nprow[1], npcol[1], myrow[1], mycol[1]
 end
@@ -69,9 +59,9 @@ end
 # input : BLACS context
 #         row and col coordinate in a process id
 # output: process number
-function pnum(icontxt::BlaInt, prow::BlaInt, pcol::BlaInt)
-    return ccall((:blacs_pnum_, libscalapack), BlaInt,
-        (Ptr{BlaInt}, Ptr{BlaInt}, Ptr{BlaInt}),
+function pnum(icontxt::ScaInt, prow::ScaInt, pcol::ScaInt)
+    return ccall((:blacs_pnum_, libscalapack), ScaInt,
+        (Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}),
         Ref(icontxt), Ref(prow), Ref(pcol))
 end
 
@@ -79,11 +69,11 @@ end
 # https://searchcode.com/file/21350056/blacs/BLACS-openmpi/SRC/MPI/blacs_pcoord_.c
 # input : BLACS context, process number
 # output: row and col coordinate in the pnum process id
-function pcoord(icontxt::BlaInt, pnum::BlaInt)
-    prow = zeros(BlaInt,1)
-    pcol = zeros(BlaInt,1)
+function pcoord(icontxt::ScaInt, pnum::ScaInt)
+    prow = zeros(ScaInt,1)
+    pcol = zeros(ScaInt,1)
     ccall((:blacs_pcoord_, libscalapack), Nothing,
-        (Ptr{BlaInt}, Ptr{BlaInt}, Ptr{BlaInt}, Ptr{BlaInt}),
+        (Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}),
         Ref(icontxt), Ref(pnum), prow, pcol)
     return prow[1], pcol[1]
 end
@@ -93,9 +83,9 @@ end
 # input : BLACS context
 #         BLACS parameter for row/col/all grid to participate barrier
 # output: nothing
-function barrier(icontxt::BlaInt, scope::Char)
+function barrier(icontxt::ScaInt, scope::Char)
     ccall((:blacs_barrier_, libscalapack), Nothing,
-        (Ptr{BlaInt}, Ptr{Char}),
+        (Ptr{ScaInt}, Ptr{Char}),
         Ref(icontxt), f_pchar(scope))
 end
 
@@ -103,12 +93,10 @@ end
 # https://searchcode.com/file/21350036/blacs/BLACS-openmpi/SRC/MPI/blacs_gridexit_.c
 # input : BLACS context
 # output: nothing
-gridexit(icontxt::BlaInt) = ccall((:blacs_gridexit_, libscalapack), Nothing, (Ptr{BlaInt},), Ref(icontxt))
+gridexit(icontxt::ScaInt) = ccall((:blacs_gridexit_, libscalapack), Nothing, (Ptr{ScaInt},), Ref(icontxt))
 
 # https://software.intel.com/en-us/mkl-developer-reference-c-blacs-exit
 # https://searchcode.com/file/21349846/blacs/BLACS-openmpi/SRC/MPI/blacs_exit_.c
 # input : BLACS flag whether continue message passing or not after done
 # output: nothing
-exit(continue_::BlaInt = 0) = ccall((:blacs_exit_, libscalapack), Nothing, (Ptr{BlaInt},), Ref(continue_))
-
-end
+exit(continue_::ScaInt = 0) = ccall((:blacs_exit_, libscalapack), Nothing, (Ptr{ScaInt},), Ref(continue_))
