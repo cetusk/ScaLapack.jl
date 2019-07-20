@@ -2,14 +2,13 @@ using MPI
 using ScaLapack
 using ScaLapack: BLACS, ScaLapackLite
 
-
-const DEBUG = true
+const DEBUG = false
 
 # problem size
-const nrows = 8
-const ncols = 5
-const nrows_block = 2
-const ncols_block = 2
+const nrows = 300
+const ncols = 100
+const nrows_block = 10
+const ncols_block = 10
 const nprocrows = 2
 const nproccols = 2
 
@@ -18,33 +17,30 @@ function mpi_finalizer(comm)
     MPI.Finalize()
 end
 
-function main()
-    # MPI initilaize
-    MPI.Init()
-    comm = MPI.COMM_WORLD
-    finalizer(mpi_finalizer, comm)
+function test(root, comm)
+
     rank = MPI.Comm_rank(comm)
     nproc = MPI.Comm_size(comm)
     MPI.Barrier(comm);
 
     # generate matrix
-    A = Matrix{Float64}(undef, nrows, ncols)
-    B = Matrix{Float64}(undef, nrows, ncols)
     if rank == 0
-        for ia::Integer = 1 : nrows
+        A = Matrix{Float64}(undef, nrows, ncols)
+        B = Matrix{Float64}(undef, nrows, ncols)
+            for ia::Integer = 1 : nrows
             for ja::Integer = 1 : ncols
                 A[ia, ja] = convert(Float64, ia+ja)
                 B[ia, ja] = convert(Float64, ia*ja)
             end
         end
+    else
+        A = Matrix{Float64}(undef, 0, 0)
+        B = Matrix{Float64}(undef, 0, 0)
     end
-    MPI.Barrier(comm)
-    MPI.Bcast!(A, 0, comm)
-    MPI.Bcast!(B, 0, comm)
     MPI.Barrier(comm)
 
     if DEBUG
-        if rank == 0
+        if rank == root
             print("\ninput matrix:\n")
         end
         MPI.Barrier(comm)
@@ -53,14 +49,14 @@ function main()
     MPI.Barrier(comm)
 
     # prepare ScaLapackLite params
-    params = ScaLapackLite.ScaLapackLiteParams(nrows_block, ncols_block, nprocrows, nproccols)
+    params = ScaLapackLite.ScaLapackLiteParams(nrows_block, ncols_block, nprocrows, nproccols, root)
     slm_A = ScaLapackLite.ScaLapackLiteMatrix(params, A)
     slm_B = ScaLapackLite.ScaLapackLiteMatrix(params, B)
 
     # perform C = A*B
-    slm_C = slm_A * slm_B
+    slm_C = slm_A * slm_B'
     if DEBUG
-        if rank == 0
+        if rank == root
             print("\noutput matrix:\n")
         end
         MPI.Barrier(comm)
@@ -73,5 +69,13 @@ function main()
 
 end
 
-main()
+function main()
+    # MPI initilaize
+    MPI.Init()
+    comm = MPI.COMM_WORLD
+    finalizer(mpi_finalizer, comm)
+    # test
+    test(0, comm)
+end
 
+main()

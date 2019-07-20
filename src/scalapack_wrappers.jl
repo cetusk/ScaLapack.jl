@@ -76,6 +76,34 @@ for (fname, elty) in ((:pselget_, :Float32),
     end
 end
 
+# input : num of rows/cols
+#         local matrix A
+#         head grid address of its process grid
+#         array descriptor
+#         ( will be updated ! ) matrix B
+#         BLACS context
+# output: Nothing
+for (fname, elty) in ((:psgemr2d_, :Float32),
+                      (:pdgemr2d_, :Float64),
+                      (:pcgemr2d_, :ComplexF32),
+                      (:pzgemr2d_, :ComplexF64))
+    @eval begin
+        function pXgemr2d!(m::ScaInt, n::ScaInt,
+                           A::Matrix{$elty}, ia::ScaInt, ja::ScaInt, desca::Vector{ScaInt},
+                           B::Matrix{$elty}, ib::ScaInt, jb::ScaInt, descb::Vector{ScaInt},
+                           ictxt::ScaInt)
+            ccall(($(string(fname)), libscalapack), Nothing,
+                 (Ptr{ScaInt}, Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt},
+                  Ptr{ScaInt}, Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt},
+                  Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}),
+                  Ref(m), Ref(n),
+                  A, Ref(ia), Ref(ja), desca,
+                  B, Ref(ib), Ref(jb), descb,
+                  Ref(ictxt))
+        end
+    end
+end
+
 # input : BLACS scope to operate; op(X) = X or X' or X*'
 #         grid indices of the inputted global matrices
 #         coefficients

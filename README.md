@@ -1,10 +1,23 @@
 # ScaLapack.jl
 This file was created refering this repogitory: https://github.com/JuliaParallel/ScaLAPACK.jl. And supports Julia v.1.1.0.
 
+# Preparing for use MPI @ Mac OS X
+```
+$ brew install cmake
+$ xcode-select --install
+$ brew install gcc
+```
+
 # Preparing for use ScaLapack.jl @ Mac OS X
 ```
-brew install openmpi
-brew install scalapack --with-shared-libs
+$ brew install openmpi
+$ brew install scalapack
+```
+
+# Add package MPI
+```
+(v1.1) pkg> build MPI
+(v1.1) pkg> add MPI
 ```
 
 # Add package ScaLapack
@@ -14,7 +27,7 @@ brew install scalapack --with-shared-libs
 
 # Execution: example
 ```
-$ mpirun -np 4 --hostfile ../hosts /path/to/bin/of/julia /path/to/source.jl
+$ mpirun -np 4 --hostfile /path/to/hostfile /path/to/bin/of/julia /path/to/source.jl
 ```
 
 # Usage: example for matrix multiplication

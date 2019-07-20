@@ -15,7 +15,7 @@ module ScaLapack
     # Lite ver. of the ScaLapack
     module ScaLapackLite
         import ..libscalapack, ..ScaInt, ..f_pchar
-        using ..ScaLapack, ..BLACS
+        using ..MPI, ..ScaLapack, ..BLACS
         include("scalapack_lite.jl")
     end
 
