@@ -31,45 +31,45 @@ $ mpirun -np 4 --hostfile /path/to/hostfile /path/to/bin/of/julia /path/to/sourc
 ```
 
 # Usage: example for matrix multiplication
-###_1. declare using ScaLapack.jl_###
+### _1. declare using ScaLapack.jl_ ###
 ```
 using MPI
 using ScaLapack
 using ScaLapack: BLACS, ScaLapackLite
 ```
-###_2. define parallelization parameters_###
+### _2. define parallelization parameters_ ###
 ```
 const nrows_block = 2
 const ncols_block = 2
 const nprocrows = 2
 const nproccols = 2
 ```
-###_3. define matrices A and B_###
+### _3. define matrices A and B_ ###
 ```
 # T/nrows/ncols = user defined
-A = Matrix{T}(undef, nrows, ncols)
-B = Matrix{T}(undef, nrows, ncols)
 if rank == 0
-    for ia::Integer = 1 : nrows
+    A = Matrix{T}(undef, nrows, ncols)
+    B = Matrix{T}(undef, nrows, ncols)
+        for ia::Integer = 1 : nrows
         for ja::Integer = 1 : ncols
-            A[ia, ja] = convert(T, ia+ja)
-            B[ia, ja] = convert(T, ia*ja)
+            A[ia, ja] = convert(Float64, ia+ja)
+            B[ia, ja] = convert(Float64, ia*ja)
         end
     end
+else
+    A = Matrix{T}(undef, 0, 0)
+    B = Matrix{T}(undef, 0, 0)
 end
 MPI.Barrier(comm)
-MPI.Bcast!(A, 0, comm)
-MPI.Bcast!(B, 0, comm)
-MPI.Barrier(comm)
 ```
-###_4. prepare ScaLapackLiteParams and create ScaLapackLiteMatrix_###
+### _4. prepare ScaLapackLiteParams and create ScaLapackLiteMatrix_ ###
 ```
 params = ScaLapackLite.ScaLapackLiteParams(nrows_block, ncols_block, nprocrows, nproccols)
 slm_A = ScaLapackLite.ScaLapackLiteMatrix(params, A)
 slm_B = ScaLapackLite.ScaLapackLiteMatrix(params, B)
 ```
-###_5. perform C = AB and extract result_###
+### _5. perform C = AB and extract result_ ###
 ```
-slm_C = slm_A * slm_B
+slm_C = slm_A * slm_B'
 C = slm_C.X
 ```
