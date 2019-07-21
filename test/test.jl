@@ -75,7 +75,7 @@ function main()
     comm = MPI.COMM_WORLD
     finalizer(mpi_finalizer, comm)
     # test
-    test(0, comm)
+    @time test(0, comm)
 end
 
 main()

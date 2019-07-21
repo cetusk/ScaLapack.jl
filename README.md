@@ -16,8 +16,8 @@ $ brew install scalapack
 
 # Add package MPI
 ```
-(v1.1) pkg> build MPI
 (v1.1) pkg> add MPI
+(v1.1) pkg> build MPI
 ```
 
 # Add package ScaLapack
@@ -28,6 +28,10 @@ $ brew install scalapack
 # Execution: example
 ```
 $ mpirun -np 4 --hostfile /path/to/hostfile /path/to/bin/of/julia /path/to/source.jl
+```
+If this "np" is more processes than your PC's physical core, you have to specify the option "--oversubscribe":
+```
+$ mpirun --oversubscribe -np 4 --hostfile /path/to/hostfile /path/to/bin/of/julia /path/to/source.jl
 ```
 
 # Usage: example for matrix multiplication
