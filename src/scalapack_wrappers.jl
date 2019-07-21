@@ -154,3 +154,59 @@ for (fname, elty) in ((:psgemm_, :Float32),
     end
 end
 
+# ! assuming ! the A is a square matrix of n x n
+# input : order of the local matrix A
+#         lower/heigher range of the rows/cols in the global A
+#         ( will be updated ! ) local matrix A
+#         first row/col address of A
+#         array descriptor for A
+#         ( will be updated ! ) see 'the "τ" meaning'
+#         ( will be updated ! ) see 'the "work" meaning'
+#         ( will be updated ! ) see 'the "lwork" meaning'
+# === detail ===
+# the "τ" meaning:
+#     dim(τ) = numroc(ja+n-2,numblocks,mycol,csrc_a,nproccols)
+#     τ[ja+ilo-1:ja+ihi-2] = the scalar factors of the elementary reflectors
+#     τ[ja:ja+ilo-2] = τ[ja+ihi-1:ja+n-2] = 0
+# the "work" meaning:
+#     dim(work) = lwork
+#     if lwork == 0, work is ignored.
+#     else,
+#         if lwork != -1, its size is (at least) of length lwork.
+#         else, its size is ( at least ) of length 1.
+# the "lwork" meaning:
+#     if lwork = -1, lwork is global
+#     if lwork >= 0, lwork is local that value must be at least
+#       lwork >= numblocks^2 + numblocks*max(ihip+1,ihlp+inlq), where:
+#           iroffa = (ia-1) % numblocks
+#           icoffa = (ja-1) % numblocks
+#           ioff = (ia+ilo-2) % numblocks
+#           iarow = indxg2p(ia,numblocks,myrow,rsrc_a,nprocrows)
+#                 = (rsrc_a+(ia-1)/numblocks) % nprocrows
+#           ihip = numroc(ihi+iroffa,numblocks,myrow,iarow,nprocrows)
+#           ilrow = indxg2p(ia+ilo-1,numblocks,myrow,rsrc_a,nprocrows)
+#                 = (rsrc_a+(ia+ilo-2)/numblocks) % nprocrows
+#           ihlp = numroc(ihi-ilo+ioff+1,numblocks,myrow,ilrow,nprocrows)
+#           ilcol = indxg2p(ja+ilo-1,numblocks,mycol,csrc_a,nprococls)
+#                 = (csrc_a+(ja+ilo-2)/numblocks) % nproccols
+#           inlq = numroc(n-ilo+ioff+1,numblocks,mycol,ilcol,nproccols)
+for (fname, elty) in ((:psgehrd_, :Float32),
+                      (:pdgehrd_, :Float64),
+                      (:pcgehrd_, :ComplexF32),
+                      (:pzgehrd_, :ComplexF64))
+    @eval begin
+        function pXgehrd!(n::ScaInt, ilo::ScaInt, ihi::ScaInt,
+                          A::Matrix{$elty}, ia::ScaInt, ja::ScaInt, desca::Vector{ScaInt},
+                          τ::Vector{$elty},
+                          work::Vector{$elty}, lwork::ScaInt)
+            info = zeros(ScaInt,1)
+            ccall(($(string(fname)), libscalapack), Nothing,
+                    (Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
+                    Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
+                    Ptr{$elty}, Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}),
+                    Ref(n), Ref(ilo), Ref(ihi),
+                    A, Ref(ia), Ref(ja), desca, 
+                    τ, work, Ref(lwork), info)
+        end
+    end
+end

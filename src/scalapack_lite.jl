@@ -27,11 +27,13 @@ end
 # ScaLapackLiteMatrix type
 mutable struct ScaLapackLiteMatrix <: AbstractScaLapackLite
     params::ScaLapackLiteParams
-    X::Matrix{Float64}
+    X::Matrix{<:Number} 
     ScaLapackLiteMatrix() = new(ScaLapackLiteParams())
     ScaLapackLiteMatrix(params) = new(params)
     ScaLapackLiteMatrix(params, X) = new(params, X)
 end
+
+#--- operator overloadings ---#
 
 # perform A'
 function Base.:(adjoint)(A::ScaLapackLiteMatrix)
@@ -48,6 +50,10 @@ function Base.:(*)(A::ScaLapackLiteMatrix, B::ScaLapackLiteMatrix)
         throw(DimensionMismatch("ScaLapackLiteMatrix A and B have different ScaLapaclLiteParams"))
     end
 end
+
+
+
+#--- multiple ---#
 for (elty) in (:Float32, :Float64, :ComplexF32, :ComplexF64)
     @eval begin
         function multiple(A::Matrix{$elty}, B::Matrix{$elty}, params::ScaLapackLiteParams)
@@ -89,6 +95,7 @@ for (elty) in (:Float32, :Float64, :ComplexF32, :ComplexF64)
             mxllda_B = max(1, mxlocr_B)
 
             if mproc >= 0 && nproc >= 0
+
                 # get array descriptor
                 # (mA, nA) x (mB, nB) = (mA, nA) x (nA, nB) = (mA, nB)
                 # (mA, nB) --> (mxlocr_A, mxlocc_B) --> mxllda_A
@@ -148,11 +155,117 @@ for (elty) in (:Float32, :Float64, :ComplexF32, :ComplexF64)
     end         # eval
 end             # for
 
+
+#--- find hessenberg matrix ---#
+function hessenberg(sllm_A::ScaLapackLiteMatrix)
+
+    # decompose
+    A = sllm_A.X
+    params = sllm_A.params
+
+    # MPI parameters
+    mblocks = params.mblocks
+    nblocks = params.nblocks
+    mprocs = params.mprocs
+    nprocs = params.nprocs
+    rootproc = params.rootproc
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    zero = 0; one = 1;
+
+    # type of the matrix A
+    elty = typeof(A[1,1])
+
+    # copy matrix from master to slave
+    A = MPI.bcast(A, rootproc, comm)
+    MPI.Barrier(comm)
+
+    # check dimensions
+    if rank == rootproc
+        check_eigs(A)
+        if mblocks != nblocks
+            throw(DimensionMismatch("process grid must be contained from squared blocks"))
+        end
+    end
+
+    # create context
+    ctxt = ScaLapack.sl_init(mprocs, nprocs)
+    ctxt0 = ScaLapack.sl_init(mprocs, nprocs)
+
+    # matrix parameters
+    m, n = size(A)
+    mproc, nproc, myrow, mycol = BLACS.gridinfo(ctxt)
+    mxlocr = ScaLapack.numroc(m, mblocks, mproc, 0, mprocs)
+    mxlocc = ScaLapack.numroc(n, nblocks, nproc, 0, nprocs)
+    mxllda = max(1, mxlocr)
+
+    if mproc >= 0 && nproc >= 0
+
+        # get array descriptor
+        desc = ScaLapack.descinit(m, n, m, n, zero, zero, ctxt0, m)
+        desc_my = ScaLapack.descinit(m, n, mblocks, nblocks, zero, zero, ctxt, mxllda)
+
+        # generate process matrix
+        myA = zeros(elty, mxlocr, mxlocc)
+        ScaLapack.pXgemr2d!(m, n,
+                            A, one, one, desc,
+                            myA, one, one, desc_my,
+                            ctxt)
+
+        # get MPI params from the descriptor
+        numblocks = desc_my[5]
+        rsrc_a = desc_my[7]
+        csrc_a = desc_my[8]
+
+        # prepare for calc lwork
+        ia = 1; ja = 1;
+        ilo = 1; ihi = m;
+        iroffa = (ia-1) % numblocks
+        icoffa = (ja-1) % numblocks
+        ioff = ( ia+ilo-2 ) % numblocks
+        iarow = convert(ScaInt, ( rsrc_a + (ia-1)/numblocks )) % mprocs
+        ihip = ScaLapack.numroc(ihi+iroffa, numblocks, myrow, iarow, mprocs)
+        ilrow = convert(ScaInt, ( rsrc_a + (ia+ilo-2)/numblocks )) % mprocs
+        ihlp = ScaLapack.numroc(ihi-ilo+ioff+1, numblocks, myrow, ilrow, mprocs)
+        ilcol = convert(ScaInt, ( csrc_a + (ja+ilo-2)/numblocks )) % nprocs
+        inlq = ScaLapack.numroc(n-ilo+ioff+1, numblocks, mycol, ilcol, nprocs)
+        # min(lwork)
+        lwork = numblocks^2 + numblocks*max(ihip+1, ihlp+inlq)
+        # allocation
+        work = zeros(elty, lwork)
+        τ = zeros(elty, ScaLapack.numroc(ja+n-2, numblocks, mycol, csrc_a, nprocs))
+
+        # find hessenberg matrix
+        ScaLapack.pXgehrd!(m, ilo, ihi,
+                            myA, ia, ja, desc_my,
+                            τ, work, lwork)
+
+    end
+    
+    BLACS.barrier(ctxt, 'A')
+    BLACS.gridexit(ctxt)
+
+    # free
+    if rank != rootproc
+        A = Matrix{elty}(undef, 0, 0)
+    end
+
+    return myA
+
+end     # function
+
+
 #--- ERROR dumpings ---#
 function check_multiple(A::Matrix{Float64}, B::Matrix{Float64})
     mA, nA = size(A)
     mB, nB = size(B)
     if nA != mB
         throw(DimensionMismatch("matrix A has dimensions ($mA, $nA), matrix B has dimensions ($mB, $nB)"))
+    end
+end
+function check_eigs(A::Matrix{Float64})
+    mA, nA = size(A)
+    if mA != nA
+        throw(DimensionMismatch("matrix A has no-squared dimensions ($mA, $nA)"))
     end
 end

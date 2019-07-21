@@ -5,10 +5,10 @@ using ScaLapack: BLACS, ScaLapackLite
 const DEBUG = false
 
 # problem size
-const nrows = 300
-const ncols = 100
-const nrows_block = 10
-const ncols_block = 10
+const nrows = 8
+const ncols = 8
+const nrows_block = 2
+const ncols_block = 2
 const nprocrows = 2
 const nproccols = 2
 
@@ -17,7 +17,7 @@ function mpi_finalizer(comm)
     MPI.Finalize()
 end
 
-function test(root, comm)
+function mutiple_test(root, comm)
 
     rank = MPI.Comm_rank(comm)
     nproc = MPI.Comm_size(comm)
@@ -27,7 +27,7 @@ function test(root, comm)
     if rank == 0
         A = Matrix{Float64}(undef, nrows, ncols)
         B = Matrix{Float64}(undef, nrows, ncols)
-            for ia::Integer = 1 : nrows
+        for ia::Integer = 1 : nrows
             for ja::Integer = 1 : ncols
                 A[ia, ja] = convert(Float64, ia+ja)
                 B[ia, ja] = convert(Float64, ia*ja)
@@ -69,13 +69,35 @@ function test(root, comm)
 
 end
 
+function hessenberg_test(root, comm)
+    rank = MPI.Comm_rank(comm)
+    nproc = MPI.Comm_size(comm)
+    MPI.Barrier(comm);
+
+    A = Matrix{Float64}(undef, nrows, ncols)
+    for ia::Integer = 1 : nrows
+        for ja::Integer = 1 : ncols
+            A[ia, ja] = convert(Float64, ia+ja)
+        end
+    end
+
+    params = ScaLapackLite.ScaLapackLiteParams(nrows_block, ncols_block, nprocrows, nproccols, root)
+    slm_A = ScaLapackLite.ScaLapackLiteMatrix(params, A)
+
+    myA = ScaLapackLite.hessenberg(slm_A)
+
+    print("[$rank] local(A): $myA\n")
+
+end
+
 function main()
     # MPI initilaize
     MPI.Init()
     comm = MPI.COMM_WORLD
     finalizer(mpi_finalizer, comm)
     # test
-    @time test(0, comm)
+    # mutiple_test(0, comm)
+    hessenberg_test(0, comm)
 end
 
 main()
