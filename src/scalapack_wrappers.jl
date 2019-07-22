@@ -34,7 +34,9 @@ function descinit(m::ScaInt, n::ScaInt, mb::ScaInt, nb::ScaInt, irsrc::ScaInt, i
         desc, Ref(m), Ref(n), Ref(mb),
         Ref(nb), Ref(irsrc), Ref(icsrc), Ref(ictxt),
         Ref(lld), info)
-    info[1] == 0 || error("input argument $(info[1]) has illegal value")
+    if info[1] < 0
+        error("input argument $(info[1]) has illegal value")
+    end
     return desc
 end
 
@@ -162,7 +164,8 @@ end
 #         array descriptor for A
 #         ( will be updated ! ) see 'the "τ" meaning'
 #         ( will be updated ! ) see 'the "work" meaning'
-#         ( will be updated ! ) see 'the "lwork" meaning'
+#         see 'the "lwork" meaning'
+# output: nothing
 # === detail ===
 # the "τ" meaning:
 #     dim(τ) = numroc(ja+n-2,numblocks,mycol,csrc_a,nproccols)
@@ -177,7 +180,8 @@ end
 # the "lwork" meaning:
 #     if lwork = -1, lwork is global
 #     if lwork >= 0, lwork is local that value must be at least
-#       lwork >= numblocks^2 + numblocks*max(ihip+1,ihlp+inlq), where:
+#       lwork >= numblocks^2 + numblocks*max(ihip+1,ihlp+inlq)
+#       where:
 #           iroffa = (ia-1) % numblocks
 #           icoffa = (ja-1) % numblocks
 #           ioff = (ia+ilo-2) % numblocks
@@ -197,16 +201,157 @@ for (fname, elty) in ((:psgehrd_, :Float32),
     @eval begin
         function pXgehrd!(n::ScaInt, ilo::ScaInt, ihi::ScaInt,
                           A::Matrix{$elty}, ia::ScaInt, ja::ScaInt, desca::Vector{ScaInt},
-                          τ::Vector{$elty},
-                          work::Vector{$elty}, lwork::ScaInt)
+                          τ::Vector{$elty})
+
+            # inner variables
             info = zeros(ScaInt,1)
-            ccall(($(string(fname)), libscalapack), Nothing,
-                    (Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
-                    Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
-                    Ptr{$elty}, Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}),
-                    Ref(n), Ref(ilo), Ref(ihi),
-                    A, Ref(ia), Ref(ja), desca, 
-                    τ, work, Ref(lwork), info)
+            work = zeros($elty,1); lwork = -1;
+            # j = 1 for perform a workspace query
+            # j = 2 for perform ccall
+            for j = 1:2
+                ccall(($(string(fname)), libscalapack), Nothing,
+                        (Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
+                        Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
+                        Ptr{$elty}, Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}),
+                        Ref(n), Ref(ilo), Ref(ihi),
+                        A, Ref(ia), Ref(ja), desca, 
+                        τ, work, Ref(lwork), info)
+                # allocate vector for j = 2
+                if j == 1
+                    lwork = convert(ScaInt, work[1])
+                    work = zeros($elty, lwork)
+                end
+            end
+
+            if info[1] < 0
+                error("input argument $(info[1]) has illegal value")
+            end
+
+        end
+    end
+end
+
+# ! assuming ! the A is an upper Hessenberg matrix of n x n
+# input : booleans that requirement return form
+#         order of the global Hessenberg matrix A
+#         lower/heigher range of the rows/cols in the global A
+#         ( will be updated ! ) global Hessenberg matrix A
+#         array descriptor for A
+#         index of the rows of Z that specified; Z[iloz:ihiz]
+#         real/imag parts of the computed eigenvalues[ilo:ihi]
+#         ( will be updated ! ) the Schur vector matrix Z; update part is [iloz:ihiz, ilo:ihi]
+#         array descriptor for Z
+#         ( will be updated ! ) see 'the "work" meaning'
+#         see 'the "lwork" meaning'
+#         temporary integer arrays and that order
+# output: nothing
+# === detail ===
+# the "wantt" requires:
+#   true ; the full Schur form
+#   false; only eigenvalues
+# the "wantz" requires:
+#   true ; the matrix of Schur vectors Z
+#   false; no Z
+# the "work" meaning:
+#     dim(work) = lwork
+# the "lwork" meaning:
+#     lwork >= 3*n + max(2*max(lld_z,lld_a)+2*locc(n),7*ceil(n/hbl)/lcm(nprocrows,nproccols))
+#     where:
+#           lld_z = descz[9], lld_a = desca[9], csrc_a = desca[8]
+#           locc(n) = numroc(n,numblocks,mycol=nproc,csrc_a,nproccols)
+#           hbl = numblocks ( = mblocks = nblocks )
+for (fname, elty) in ((:pslaqr1_, :Float32),
+                      (:pdlaqr1_, :Float64))
+# for (fname, elty) in ((:pslahqr_, :Float32),
+#                       (:pdlahqr_, :Float64))
+        @eval begin
+        function pXlahqr!(wantt::Bool, wantz::Bool,
+                          n::ScaInt, ilo::ScaInt, ihi::ScaInt,
+                          A::Matrix{$elty}, desca::Vector{ScaInt},
+                          wr::Vector{$elty}, wi::Vector{$elty},
+                          iloz::ScaInt, ihiz::ScaInt, Z::Matrix{$elty}, descz::Vector{ScaInt})
+
+            # inner variables
+            info = zeros(ScaInt,1)
+            work = zeros($elty,1); lwork = -1;
+            iwork = zeros(ScaInt,1); ilwork = -1;
+            # j = 1 for perform a workspace query
+            # j = 2 for perform ccall
+            for j = 1:2                
+                ccall(($(string(fname)), libscalapack), Nothing,
+                        (Ptr{ScaInt}, Ptr{ScaInt},
+                        Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
+                        Ptr{$elty}, Ptr{ScaInt},
+                        Ptr{$elty}, Ptr{$elty},
+                        Ptr{ScaInt}, Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt},
+                        Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
+                        Ptr{ScaInt}),
+                        Ref(convert(ScaInt, wantt)), Ref(convert(ScaInt, wantz)),
+                        Ref(n), Ref(ilo), Ref(ihi),
+                        A, desca, wr, wi,
+                        Ref(iloz), Ref(ihiz), Z, descz,
+                        work, Ref(lwork), iwork, Ref(ilwork),
+                        info)
+                # allocate vector for j = 2
+                if j == 1
+                    lwork = convert(ScaInt, work[1])
+                    ilwork = convert(ScaInt, iwork[1])
+                    work = zeros($elty, lwork)
+                    iwork = zeros(ScaInt, ilwork)
+                end
+            end
+
+            if info[1] < 0
+                error("input argument $(info[1]) has illegal value")
+            end
+
+        end
+    end
+end
+for (fname, elty) in ((:pclahqr_, :ComplexF32),
+                      (:pzlahqr_, :ComplexF64))
+    @eval begin
+        function pXlahqr!(wantt::Bool, wantz::Bool,
+                            n::ScaInt, ilo::ScaInt, ihi::ScaInt,
+                            A::Matrix{$elty}, desca::Vector{ScaInt},
+                            w::Vector{$elty},
+                            iloz::ScaInt, ihiz::ScaInt, Z::Matrix{$elty}, descz::Vector{ScaInt})
+
+            # inner variables
+            info = zeros(ScaInt,1)
+            work = zeros($elty,1); lwork = -1;
+            iwork = zeros(ScaInt,1); ilwork = -1;
+            # j = 1 for perform a workspace query
+            # j = 2 for perform ccall
+            for j = 1:2                
+                ccall(($(string(fname)), libscalapack), Nothing,
+                        (Ptr{Bool}, Ptr{Bool},
+                        Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
+                        Ptr{$elty}, Ptr{ScaInt},
+                        Ptr{$elty},
+                        Ptr{ScaInt}, Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt},
+                        Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
+                        Ptr{ScaInt}),
+                        Ref(wantt), Ref(wantz),
+                        Ref(n), Ref(ilo), Ref(ihi),
+                        A, desca, w,
+                        Ref(iloz), Ref(ihiz), Z, descz,
+                        work, Ref(lwork), iwork, Ref(ilwork),
+                        info)
+                # allocate vector for j = 2
+                if j == 1
+                    print("$work,$iwork,$lwork,$ilwork\n")
+                    lwork = convert(ScaInt, work[1])
+                    ilwork = convert(ScaInt, iwork[1])
+                    work = zeros($elty, lwork)
+                    iwork = zeros(ScaInt, ilwork)
+                end
+            end
+
+            if info[1] < 0
+                error("input argument $(info[1]) has illegal value")
+            end
+
         end
     end
 end

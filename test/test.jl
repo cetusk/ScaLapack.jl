@@ -5,10 +5,10 @@ using ScaLapack: BLACS, ScaLapackLite
 const DEBUG = false
 
 # problem size
-const nrows = 8
-const ncols = 8
-const nrows_block = 2
-const ncols_block = 2
+const nrows = 3
+const ncols = 3
+const nrows_block = 1
+const ncols_block = 1
 const nprocrows = 2
 const nproccols = 2
 
@@ -74,19 +74,30 @@ function hessenberg_test(root, comm)
     nproc = MPI.Comm_size(comm)
     MPI.Barrier(comm);
 
-    A = Matrix{Float64}(undef, nrows, ncols)
-    for ia::Integer = 1 : nrows
-        for ja::Integer = 1 : ncols
-            A[ia, ja] = convert(Float64, ia+ja)
-        end
+    # A = Matrix{Float64}(undef, nrows, ncols)
+    # for ia::Integer = 1 : nrows
+    #     for ja::Integer = 1 : ncols
+    #         A[ia, ja] = convert(Float64, ia+ja)
+    #     end
+    # end
+
+    # Example of: https://www.ibm.com/support/knowledgecenter/en/SSNR5K_5.3.0/com.ibm.cluster.pessl.v5r3.pssl100.doc/am6gr_lgehrd.htm
+    # eig = 1, 2, 3
+    if rank == root
+        A = Matrix{Float64}(hcat([33.0,-24.0,-8.0],
+                                 [16.0,-10.0,-4.0],
+                                 [72.0,-57.0,-17.0]))
+    else
+        A = Matrix{Float64}(undef, 0, 0)
     end
 
     params = ScaLapackLite.ScaLapackLiteParams(nrows_block, ncols_block, nprocrows, nproccols, root)
     slm_A = ScaLapackLite.ScaLapackLiteMatrix(params, A)
 
-    myA = ScaLapackLite.hessenberg(slm_A)
+    # slm_hA = ScaLapackLite.hessenberg(slm_A)
+    (eig,eigvec) = ScaLapackLite.eigs(slm_A)
 
-    print("[$rank] local(A): $myA\n")
+    print("[$rank] A: $eig\n")
 
 end
 
