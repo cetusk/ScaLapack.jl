@@ -436,7 +436,6 @@ for (fname, elty) in ((:pclahqr_, :ComplexF32),
                         info)
                 # allocate vector for j = 2
                 if j == 1
-                    print("$work,$iwork,$lwork,$ilwork\n")
                     lwork = convert(ScaInt, work[1])
                     ilwork = convert(ScaInt, iwork[1])
                     work = zeros($elty, lwork)

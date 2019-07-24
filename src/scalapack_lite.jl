@@ -319,12 +319,9 @@ function eigs(sllm_A::ScaLapackLiteMatrix)
         job = 'B'
         ilo = 1; ihi = m;
         scale = zeros(elty_s, mxllda)
-        print("[$rank]: check, pre bal scale = $scale\n")
         ScaLapack.pXgebal!(job, mxllda,
                            myA, desc_my, ilo, ihi,
                            scale)
-
-        print("[$rank]: check local(A) = $myA\n")
 
         # MPI params
         numblocks = mblocks
@@ -338,19 +335,16 @@ function eigs(sllm_A::ScaLapackLiteMatrix)
                            myA, ia, ja, desc_my,
                            τ)
 
-        print("[$rank]: check local(H) = $myA\n")
-        print("[$rank]: check local(τ) = $τ\n")
-
         # generate orthogonal Q matrix
+        uplo = 'L'
+        α = convert(elty, zero); β = convert(elty, one);
+        myQ = Matrix{elty}(I, mxlocr, mxlocc)
         side = 'L'; trans = 'N';
-        myQ = zeros(elty, mxlocr, mxlocc)
         ScaLapack.pXYYmhr!(side, trans,
                            m, n, ilo, ihi,
                            myA, ia, ja, desc_my,
                            τ,
                            myQ, one, one, desc_my)
-
-        print("[$rank]: check local(Q) = $myQ\n")
 
         # remove non-reduced part of the upper Hessenberg matrix
         uplo = 'L'
@@ -360,8 +354,6 @@ function eigs(sllm_A::ScaLapackLiteMatrix)
         ScaLapack.pXlaset!(uplo, m, n,
                            α, β,
                            myA, ia_, ja_, desc_my)
-
-        print("[$rank]: check local(H) = $myA\n")
                    
         # find eigenvalues
         wantt = true; wantz = true;

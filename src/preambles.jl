@@ -2,6 +2,7 @@
 # dependencies
 using MPI
 using Compat
+using LinearAlgebra
 using LinearAlgebra: BlasFloat, BlasReal
 using DistributedArrays, Distributed
 using DistributedArrays: DArray, defaultdist
