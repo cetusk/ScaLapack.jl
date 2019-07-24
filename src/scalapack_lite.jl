@@ -222,17 +222,23 @@ function hessenberg(sllm_A::ScaLapackLiteMatrix, reduced::Bool = true)
         rsrc_a = zero
         csrc_a = zero
 
-        # prepare for calc lwork
-        ia = 1; ja = 1;
-        ilo = 1; ihi = m;
-
-        # allocation
-        τ = zeros(elty, ScaLapack.numroc(ja+n-2, numblocks, mycol, csrc_a, nprocs))
-
         # find hessenberg matrix
+        ilo = 1; ihi = m;
+        ia = 1; ja = 1;
+        τ = zeros(elty, ScaLapack.numroc(ja+n-2, numblocks, mycol, csrc_a, nprocs))
         ScaLapack.pXgehrd!(m, ilo, ihi,
                            myA, ia, ja, desc_my,
                            τ)
+
+        if reduced
+            # remove non-reduced part of the upper Hessenberg matrix
+            uplo = 'L'
+            α = convert(elty, zero); β = convert(elty, zero);
+            ia = 3; ja = 1;
+            ScaLapack.pXlaset!(uplo, m-2, n-2,
+                               α, β,
+                               myA, ia, ja, desc_my)
+        end
 
         # merge local matrix to global
         ScaLapack.pXgemr2d!(m, n,
@@ -315,7 +321,7 @@ function eigs(sllm_A::ScaLapackLiteMatrix)
                             myA, one, one, desc_my,
                             ctxt)
 
-        # balancing ( now, this is the point of an error occured )
+        # balancing
         job = 'B'
         ilo = 1; ihi = m;
         scale = zeros(elty_s, mxllda)
@@ -329,6 +335,7 @@ function eigs(sllm_A::ScaLapackLiteMatrix)
         csrc_a = zero
 
         # find hessenberg matrix
+        ilo = 1; ihi = m;
         ia = 1; ja = 1;
         τ = zeros(elty, ScaLapack.numroc(ja+n-2, numblocks, mycol, csrc_a, nprocs))
         ScaLapack.pXgehrd!(m, ilo, ihi,
@@ -337,6 +344,7 @@ function eigs(sllm_A::ScaLapackLiteMatrix)
 
         # generate orthogonal Q matrix
         uplo = 'L'
+        ilo = 1; ihi = m;
         α = convert(elty, zero); β = convert(elty, one);
         myQ = Matrix{elty}(I, mxlocr, mxlocc)
         side = 'L'; trans = 'N';
@@ -349,15 +357,15 @@ function eigs(sllm_A::ScaLapackLiteMatrix)
         # remove non-reduced part of the upper Hessenberg matrix
         uplo = 'L'
         α = convert(elty, zero); β = convert(elty, zero);
-        ia_ = 3; ja_ = 1;
-        # ScaLapack.pXlaset!(uplo, m-2, n-2,
-        ScaLapack.pXlaset!(uplo, m, n,
+        ia = 3; ja = 1;
+        ScaLapack.pXlaset!(uplo, m-2, n-2,
                            α, β,
-                           myA, ia_, ja_, desc_my)
+                           myA, ia, ja, desc_my)
                    
         # find eigenvalues
         wantt = true; wantz = true;
         ilo = 1; ihi = m;
+        w = zeros(elty, m)
         # for real input
         if elty == Float32 || elty == Float64
             wr = zeros(elty, m); wi = zeros(elty, m)

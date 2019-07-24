@@ -94,10 +94,12 @@ function hessenberg_test(root, comm)
     params = ScaLapackLite.ScaLapackLiteParams(nrows_block, ncols_block, nprocrows, nproccols, root)
     slm_A = ScaLapackLite.ScaLapackLiteMatrix(params, A)
 
-    # slm_hA = ScaLapackLite.hessenberg(slm_A)
-    (eig,eigvec) = ScaLapackLite.eigs(slm_A)
+    # slm_hA = ScaLapackLite.hessenberg(slm_A, true)
+    # print("[$rank] A: $(slm_hA.X)\n")
 
+    (eig,eigvec) = ScaLapackLite.eigs(slm_A)
     print("[$rank] A: $eig\n")
+
 
 end
 

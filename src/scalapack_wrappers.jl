@@ -182,7 +182,6 @@ for (fname, elty, elty_s) in ((:psgebal_, :Float32, :Float32),
                               (:pcgebal_, :ComplexF32, :Float32),
                               (:pzgebal_, :ComplexF64, :Float64))
     @eval begin
-        # for scale element type
         function pXgebal!(job::Char, n::ScaInt,
                           A::Matrix{$elty}, desca::Vector{ScaInt}, ilo::ScaInt, ihi::ScaInt,
                           scale::Vector{$elty_s})
@@ -370,7 +369,6 @@ for (fname, elty) in ((:pslaqr1_, :Float32),
             info = zeros(ScaInt,1)
             work = zeros($elty,1); lwork = -1;
             iwork = zeros(ScaInt,1); ilwork = -1;
-            dp_alloc = 200000000; int_alloc = 800000;
             # j = 1 for perform a workspace query
             # j = 2 for perform ccall
             for j = 1:2                
