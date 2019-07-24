@@ -161,7 +161,7 @@ end             # for
 
 
 #--- find hessenberg matrix ---#
-function hessenberg(sllm_A::ScaLapackLiteMatrix)
+function hessenberg(sllm_A::ScaLapackLiteMatrix, reduced::Bool = true)
 
     # assume: ScaLapackLiteParams must be correctly given for all processes
     params = sllm_A.params
@@ -274,18 +274,14 @@ function eigs(sllm_A::ScaLapackLiteMatrix)
 
     # copy matrix from master to slave
     sllm_A = MPI.bcast(sllm_A, rootproc, comm)
-    
-    # find Hessenberg matrix
-    sllm_hA = hessenberg(sllm_A)
-
-    # copy matrix from master to slave
-    sllm_hA = MPI.bcast(sllm_hA, rootproc, comm)
 
     # decompose
-    A = sllm_hA.X
-
+    A = sllm_A.X
     # type of the matrix A
     elty = typeof(A[1,1])
+    elty_s = elty
+    if elty == ComplexF32; elty_s = Float32;
+    elseif elty == ComplexF64; elty_s = Float64; end
 
     # check dimensions
     if rank == rootproc
@@ -319,28 +315,60 @@ function eigs(sllm_A::ScaLapackLiteMatrix)
                             myA, one, one, desc_my,
                             ctxt)
 
-        # generate process matrix: Schur vector matrix
-        myZ = zeros(elty, mxlocr, mxlocc)
+        # balancing ( now, this is the point of an error occured )
+        job = 'B'
+        ilo = 1; ihi = m;
+        scale = zeros(elty_s, m)
+        ScaLapack.pXgebal!(job, m,
+                           myA, desc, ilo, ihi,
+                           scale)
+
+        # MPI params
+        numblocks = mblocks
+        rsrc_a = zero
+        csrc_a = zero
+
+        # find hessenberg matrix
+        ia = 1; ja = 1;
+        τ = zeros(elty, ScaLapack.numroc(ja+n-2, numblocks, mycol, csrc_a, nprocs))
+        ScaLapack.pXgehrd!(m, ilo, ihi,
+                           myA, ia, ja, desc_my,
+                           τ)
+
+        # generate orthogonal Q matrix
+        side = 'L'; trans = 'N';
+        myQ = zeros(elty, mxlocr, mxlocc)
+        ScaLapack.pXYYmhr!(side, trans,
+                           m, n, ilo, ihi,
+                           myA, ia, ja, desc_my,
+                           τ,
+                           myQ, one, one, desc_my)
+
+        # remove non-reduced part of the upper Hessenberg matrix
+        uplo = 'L'
+        ia_ = 3; ja_ = 1;
+        # ScaLapack.pXlaset!(uplo, m-2, n-2,
+        ScaLapack.pXlaset!(uplo, m, n,
+                           zero, zero,
+                           myA, ia_, ja_, desc_my)
 
         # find eigenvalues
-        wantt = false; wantz = true;
+        wantt = true; wantz = true;
         ilo = 1; ihi = m;
-        iloz = 1; ihiz = m;
-
         # for real input
         if elty == Float32 || elty == Float64
             wr = zeros(elty, m); wi = zeros(elty, m)
-            ScaLapack.pXlahqr!(wantt, wantz,
-                               m, ilo, ihi,
-                               myA, desc_my, wr, wi,
-                               iloz, ihiz, myZ, desc_my)
+            ScaLapack.pXlahqr!(wantt, wantz, m,
+                               ilo, ihi, myA, desc_my,
+                               wr, wi,
+                               ilo, ihi, myQ, desc_my)
             w = wr + im*wi
         # for complex input
         elseif elty == ComplexF32 || elty == ComplexF64
-            ScaLapack.pXlahqr!(wantt, wantz,
-                               m, ilo, ihi,
-                               myA, desc_my, w,
-                               iloz, ihiz, myZ, desc_my)
+            ScaLapack.pXlahqr!(wantt, wantz, m,
+                               ilo, ihi, myA, desc_my,
+                               w,
+                               ilo, ihi, myQ, desc_my)
         end
 
     end

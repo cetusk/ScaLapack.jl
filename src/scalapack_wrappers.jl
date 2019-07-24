@@ -156,6 +156,58 @@ for (fname, elty) in ((:psgemm_, :Float32),
     end
 end
 
+#
+for (fname, elty) in ((:pslaset_, :Float32),
+                      (:pclaset_, :Float64),
+                      (:pdlaset_, :ComplexF32),
+                      (:pzlaset_, :ComplexF64))
+    @eval begin
+        function pXlaset!(uplo::Char, m::ScaInt, n::ScaInt,
+                          α::$elty, β::$elty,
+                          A::Matrix{$elty}, ia::ScaInt, ja::ScaInt, desca::Vector{ScaInt})
+            ccall(($(string(fname)), libscalapack), Nothing,
+                    (Ptr{Char}, Ptr{ScaInt}, Ptr{ScaInt},
+                    Ptr{$elty}, Ptr{$elty},
+                    Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}),
+                    f_pchar(uplo), Ref(m), Ref(n),
+                    Ref(α), Ref(β),
+                    A, Ref(ia), Ref(ja), desca)
+        end
+    end
+end
+
+#
+for (fname, elty) in ((:psgebal_, :Float32),
+                      (:pdgebal_, :Float64),
+                      (:pcgebal_, :ComplexF32),
+                      (:pzgebal_, :ComplexF64))
+    @eval begin
+        # for scale element type
+        elty_s = $elty
+        if $elty == :ComplexF32; elty_s = :Float32;
+        elseif $elty == :ComplexF64; elty_s = :Float64; end
+        function pXgebal!(job::Char, n::ScaInt,
+                          A::Matrix{$elty}, desca::Vector{ScaInt}, ilo::ScaInt, ihi::ScaInt,
+                          scale::Vector{elty_s})
+
+            # inner variable
+            info = zeros(ScaInt,1)
+            ccall(($(string(fname)), libscalapack), Nothing,
+                    (Ptr{Char}, Ptr{ScaInt},
+                    Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
+                    Ptr{elty_s}, Ptr{ScaInt}),
+                    f_pchar(job), Ref(n),
+                    A, desca, Ref(ilo), Ref(ihi),
+                    scale, info)
+
+            if info[1] < 0
+                error("input argument $(info[1]) has illegal value")
+            end
+
+        end
+    end
+end
+
 # ! assuming ! the A is a square matrix of n x n
 # input : order of the local matrix A
 #         lower/heigher range of the rows/cols in the global A
@@ -231,6 +283,53 @@ for (fname, elty) in ((:psgehrd_, :Float32),
     end
 end
 
+#
+for (fname, elty) in ((:psormhr_, :Float32),
+                      (:pdormhr_, :Float64),
+                      (:pcunmhr_, :ComplexF32),
+                      (:pzunmhr_, :ComplexF64))
+    @eval begin
+        function pXYYmhr!(side::Char, trans::Char,
+                          m::ScaInt, n::ScaInt, ilo::ScaInt, ihi::ScaInt,
+                          A::Matrix{$elty}, ia::ScaInt, ja::ScaInt, desca::Vector{ScaInt},
+                          τ::Vector{$elty},
+                          C::Matrix{$elty}, ic::ScaInt, jc::ScaInt, descc::Vector{ScaInt},
+                          )
+
+            # inner variables
+            info = zeros(ScaInt,1)
+            work = zeros($elty,1); lwork = -1;
+            # j = 1 for perform a workspace query
+            # j = 2 for perform ccall
+            for j = 1:2
+                ccall(($(string(fname)), libscalapack), Nothing,
+                    (Ptr{Char}, Ptr{Char},
+                    Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
+                    Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
+                    Ptr{$elty},
+                    Ptr{$elty}, Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt},
+                    Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}),
+                    f_pchar(side), f_pchar(trans),
+                    Ref(m), Ref(n), Ref(ilo), Ref(ihi),
+                    A, Ref(ia), Ref(ja), desca,
+                    τ,
+                    C, Ref(ic), Ref(jc), descc,
+                    work, Ref(lwork), info)
+                # allocate vector for j = 2
+                if j == 1
+                    lwork = convert(ScaInt, work[1])
+                    work = zeros($elty, lwork)
+                end
+            end
+
+            if info[1] < 0
+                error("input argument $(info[1]) has illegal value")
+            end
+
+        end
+    end
+end
+
 # ! assuming ! the A is an upper Hessenberg matrix of n x n
 # input : booleans that requirement return form
 #         order of the global Hessenberg matrix A
@@ -275,6 +374,7 @@ for (fname, elty) in ((:pslaqr1_, :Float32),
             info = zeros(ScaInt,1)
             work = zeros($elty,1); lwork = -1;
             iwork = zeros(ScaInt,1); ilwork = -1;
+            dp_alloc = 200000000; int_alloc = 800000;
             # j = 1 for perform a workspace query
             # j = 2 for perform ccall
             for j = 1:2                
