@@ -177,25 +177,22 @@ for (fname, elty) in ((:pslaset_, :Float32),
 end
 
 #
-for (fname, elty) in ((:psgebal_, :Float32),
-                      (:pdgebal_, :Float64),
-                      (:pcgebal_, :ComplexF32),
-                      (:pzgebal_, :ComplexF64))
+for (fname, elty, elty_s) in ((:psgebal_, :Float32, :Float32),
+                              (:pdgebal_, :Float64, :Float64),
+                              (:pcgebal_, :ComplexF32, :Float32),
+                              (:pzgebal_, :ComplexF64, :Float64))
     @eval begin
         # for scale element type
-        elty_s = $elty
-        if $elty == :ComplexF32; elty_s = :Float32;
-        elseif $elty == :ComplexF64; elty_s = :Float64; end
         function pXgebal!(job::Char, n::ScaInt,
                           A::Matrix{$elty}, desca::Vector{ScaInt}, ilo::ScaInt, ihi::ScaInt,
-                          scale::Vector{elty_s})
+                          scale::Vector{$elty_s})
 
             # inner variable
             info = zeros(ScaInt,1)
             ccall(($(string(fname)), libscalapack), Nothing,
                     (Ptr{Char}, Ptr{ScaInt},
                     Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
-                    Ptr{elty_s}, Ptr{ScaInt}),
+                    Ptr{$elty_s}, Ptr{ScaInt}),
                     f_pchar(job), Ref(n),
                     A, desca, Ref(ilo), Ref(ihi),
                     scale, info)
@@ -293,8 +290,7 @@ for (fname, elty) in ((:psormhr_, :Float32),
                           m::ScaInt, n::ScaInt, ilo::ScaInt, ihi::ScaInt,
                           A::Matrix{$elty}, ia::ScaInt, ja::ScaInt, desca::Vector{ScaInt},
                           τ::Vector{$elty},
-                          C::Matrix{$elty}, ic::ScaInt, jc::ScaInt, descc::Vector{ScaInt},
-                          )
+                          C::Matrix{$elty}, ic::ScaInt, jc::ScaInt, descc::Vector{ScaInt})
 
             # inner variables
             info = zeros(ScaInt,1)
@@ -307,7 +303,7 @@ for (fname, elty) in ((:psormhr_, :Float32),
                     Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
                     Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
                     Ptr{$elty},
-                    Ptr{$elty}, Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt},
+                    Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
                     Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}),
                     f_pchar(side), f_pchar(trans),
                     Ref(m), Ref(n), Ref(ilo), Ref(ihi),

@@ -318,10 +318,13 @@ function eigs(sllm_A::ScaLapackLiteMatrix)
         # balancing ( now, this is the point of an error occured )
         job = 'B'
         ilo = 1; ihi = m;
-        scale = zeros(elty_s, m)
-        ScaLapack.pXgebal!(job, m,
-                           myA, desc, ilo, ihi,
+        scale = zeros(elty_s, mxllda)
+        print("[$rank]: check, pre bal scale = $scale\n")
+        ScaLapack.pXgebal!(job, mxllda,
+                           myA, desc_my, ilo, ihi,
                            scale)
+
+        print("[$rank]: check local(A) = $myA\n")
 
         # MPI params
         numblocks = mblocks
@@ -335,6 +338,9 @@ function eigs(sllm_A::ScaLapackLiteMatrix)
                            myA, ia, ja, desc_my,
                            τ)
 
+        print("[$rank]: check local(H) = $myA\n")
+        print("[$rank]: check local(τ) = $τ\n")
+
         # generate orthogonal Q matrix
         side = 'L'; trans = 'N';
         myQ = zeros(elty, mxlocr, mxlocc)
@@ -344,14 +350,19 @@ function eigs(sllm_A::ScaLapackLiteMatrix)
                            τ,
                            myQ, one, one, desc_my)
 
+        print("[$rank]: check local(Q) = $myQ\n")
+
         # remove non-reduced part of the upper Hessenberg matrix
         uplo = 'L'
+        α = convert(elty, zero); β = convert(elty, zero);
         ia_ = 3; ja_ = 1;
         # ScaLapack.pXlaset!(uplo, m-2, n-2,
         ScaLapack.pXlaset!(uplo, m, n,
-                           zero, zero,
+                           α, β,
                            myA, ia_, ja_, desc_my)
 
+        print("[$rank]: check local(H) = $myA\n")
+                   
         # find eigenvalues
         wantt = true; wantz = true;
         ilo = 1; ihi = m;
