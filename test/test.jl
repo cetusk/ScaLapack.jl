@@ -2,13 +2,22 @@ using MPI
 using ScaLapack
 using ScaLapack: BLACS, ScaLapackLite
 
+# for check correction
+using LinearAlgebra
+
+# for DEBUG
+using Printf
 const DEBUG = false
+function prtf(x)
+    if x < 0; s = @sprintf("%.7f", x);
+    else s = @sprintf(" %.7f", x); end;
+end
 
 # problem size
-const nrows = 3
-const ncols = 3
-const nrows_block = 1
-const ncols_block = 1
+const nrows = 20
+const ncols = 20
+const nrows_block = 6
+const ncols_block = 6
 const nprocrows = 2
 const nproccols = 2
 
@@ -74,32 +83,56 @@ function hessenberg_test(root, comm)
     nproc = MPI.Comm_size(comm)
     MPI.Barrier(comm);
 
-    # A = Matrix{Float64}(undef, nrows, ncols)
-    # for ia::Integer = 1 : nrows
-    #     for ja::Integer = 1 : ncols
-    #         A[ia, ja] = convert(Float64, ia+ja)
-    #     end
-    # end
-
-    # Example of: https://www.ibm.com/support/knowledgecenter/en/SSNR5K_5.3.0/com.ibm.cluster.pessl.v5r3.pssl100.doc/am6gr_lgehrd.htm
-    # eig = 1, 2, 3
-    if rank == root
-        A = Matrix{Float64}(hcat([33.0,-24.0,-8.0],
-                                 [16.0,-10.0,-4.0],
-                                 [72.0,-57.0,-17.0]))
-    else
-        A = Matrix{Float64}(undef, 0, 0)
+    A = Matrix{Float64}(undef, nrows, ncols)
+    for ia::Integer = 1 : nrows
+        for ja::Integer = 1 : ncols
+            A[ia, ja] = convert(Float64, rand())
+        end
     end
-
     params = ScaLapackLite.ScaLapackLiteParams(nrows_block, ncols_block, nprocrows, nproccols, root)
     slm_A = ScaLapackLite.ScaLapackLiteMatrix(params, A)
+
+    if rank == root
+        # reference: LAPACK routine
+        (eig_ref,eigvec_ref)=LinearAlgebra.eigen(A)
+    end
 
     # slm_hA = ScaLapackLite.hessenberg(slm_A, true)
     # print("[$rank] A: $(slm_hA.X)\n")
 
-    (eig,eigvec) = ScaLapackLite.eigs(slm_A)
-    print("[$rank] A: $eig\n")
+    (eig,schurvec) = ScaLapackLite.eigs(slm_A)
 
+    if rank == root
+        eidx=sortperm(real(eig))
+        eidx_ref=sortperm(real(eig_ref))
+        diff = [ abs(eig[eidx[j]]-eig_ref[eidx_ref[j]]) for j=1:nrows ]
+
+        print("\n--- eigenvalues ---\n")
+        wlines = "\nindex / eig(ScaLapackLite) / eig(LAPACK) / | eig(ScaLapackLite)-eig(LAPACK) |\n"
+        for idx = 1:nrows
+            wlines*= @sprintf("  %s / %s + i %s / %s + i %s / %s\n",
+                          lpad(idx, 3, "0"),
+                          prtf(real(eig[eidx[idx]])), prtf(imag(eig[eidx[idx]])),
+                          prtf(real(eig_ref[eidx_ref[idx]])), prtf(imag(eig_ref[eidx_ref[idx]])),
+                          prtf(diff[idx]))
+        end
+        wlines*="\n"; print(wlines);
+
+        print("\n--- Schur / eigen vectors ---\n")
+        for jdx = 1:ncols
+            print("\n[$jdx-th vec]:\n")
+            wlines = "\nindex / Schur vector (ScaLapackLite) / eig vector (LAPACK)\n"
+            for idx = 1:nrows
+                wlines*= @sprintf("  %s / %s / %s + i %s\n",
+                            lpad(idx, 3, "0"),
+                            prtf(schurvec[idx, eidx[jdx]]),
+                            prtf(real(eigvec_ref[idx,eidx_ref[jdx]])),
+                            prtf(imag(eigvec_ref[idx,eidx_ref[jdx]])))
+            end
+            wlines*="\n"; print(wlines);
+        end
+
+    end
 
 end
 

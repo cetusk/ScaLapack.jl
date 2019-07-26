@@ -2,7 +2,6 @@
 # dependencies
 using MPI
 using Compat
-using LinearAlgebra
 using LinearAlgebra: BlasFloat, BlasReal
 using DistributedArrays, Distributed
 using DistributedArrays: DArray, defaultdist
@@ -15,11 +14,3 @@ const libscalapack = "/usr/local/lib/libscalapack.dylib"
 # depend on envionment
 # const ScaInt = Int32
 const ScaInt = Int64
-
-struct ScaLapackException <: Exception
-    info::Integer
-end
-
-if myid() > 1
-    MPI.Initialized() || MPI.Init()
-end

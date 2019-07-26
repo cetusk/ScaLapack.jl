@@ -78,6 +78,26 @@ for (fname, elty) in ((:pselget_, :Float32),
     end
 end
 
+#
+for (fname, elty) in ((:pslacpy_, :Float32),
+                      (:pdlacpy_, :Float64),
+                      (:pclacpy_, :ComplexF32),
+                      (:pzlacpy_, :ComplexF64))
+    @eval begin
+        function pXlacpy!(uplo::Char, m::ScaInt, n::ScaInt,
+                          A::Matrix{$elty}, ia::ScaInt, ja::ScaInt, desca::Vector{ScaInt},
+                          B::Matrix{$elty}, ib::ScaInt, jb::ScaInt, descb::Vector{ScaInt})
+            ccall(($(string(fname)), libscalapack), Nothing,
+                    (Ptr{Char}, Ptr{ScaInt}, Ptr{ScaInt},
+                    Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
+                    Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}),
+                    f_pchar(uplo), Ref(m), Ref(n),
+                    A, Ref(ia), Ref(ja), desca,
+                    B, Ref(ib), Ref(jb), descb)
+        end
+    end
+end
+
 # input : num of rows/cols
 #         local matrix A
 #         head grid address of its process grid
@@ -367,20 +387,20 @@ for (fname, elty) in ((:pslaqr1_, :Float32),
 
             # inner variables
             info = zeros(ScaInt,1)
-            work = zeros($elty,1); lwork = -1;
-            iwork = zeros(ScaInt,1); ilwork = -1;
+            work = zeros($elty,1); lwork = convert(ScaInt, -1);
+            iwork = zeros(ScaInt,1); ilwork = convert(ScaInt, -1);
             # j = 1 for perform a workspace query
             # j = 2 for perform ccall
-            for j = 1:2                
+            for j = 1:2
                 ccall(($(string(fname)), libscalapack), Nothing,
-                        (Ptr{ScaInt}, Ptr{ScaInt},
+                        (Ptr{Bool}, Ptr{Bool},
                         Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
                         Ptr{$elty}, Ptr{ScaInt},
                         Ptr{$elty}, Ptr{$elty},
                         Ptr{ScaInt}, Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt},
                         Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
                         Ptr{ScaInt}),
-                        Ref(convert(ScaInt, wantt)), Ref(convert(ScaInt, wantz)),
+                        Ref(wantt), Ref(wantz),
                         Ref(n), Ref(ilo), Ref(ihi),
                         A, desca, wr, wi,
                         Ref(iloz), Ref(ihiz), Z, descz,
@@ -390,6 +410,7 @@ for (fname, elty) in ((:pslaqr1_, :Float32),
                 if j == 1
                     lwork = convert(ScaInt, work[1])
                     ilwork = convert(ScaInt, iwork[1])
+                    # ilwork = convert(ScaInt, 1000)
                     work = zeros($elty, lwork)
                     iwork = zeros(ScaInt, ilwork)
                 end
@@ -413,20 +434,20 @@ for (fname, elty) in ((:pclahqr_, :ComplexF32),
 
             # inner variables
             info = zeros(ScaInt,1)
-            work = zeros($elty,1); lwork = -1;
-            iwork = zeros(ScaInt,1); ilwork = -1;
+            work = zeros($elty,1); lwork = convert(ScaInt, -1);
+            iwork = zeros(ScaInt,1); ilwork = convert(ScaInt, -1);
             # j = 1 for perform a workspace query
             # j = 2 for perform ccall
             for j = 1:2                
                 ccall(($(string(fname)), libscalapack), Nothing,
-                        (Ptr{Bool}, Ptr{Bool},
+                        (Ptr{ScaInt}, Ptr{ScaInt},
                         Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
                         Ptr{$elty}, Ptr{ScaInt},
                         Ptr{$elty},
                         Ptr{ScaInt}, Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt},
                         Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
                         Ptr{ScaInt}),
-                        Ref(wantt), Ref(wantz),
+                        Ref(convert(ScaInt, wantt)), Ref(convert(ScaInt, wantz)),
                         Ref(n), Ref(ilo), Ref(ihi),
                         A, desca, w,
                         Ref(iloz), Ref(ihiz), Z, descz,
