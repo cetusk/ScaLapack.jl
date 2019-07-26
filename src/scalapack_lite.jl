@@ -30,7 +30,7 @@ end
 # ScaLapackLiteMatrix type
 mutable struct ScaLapackLiteMatrix <: AbstractScaLapackLite
     params::ScaLapackLiteParams
-    X::Matrix{<:Number} 
+    X::Matrix{T} where {T} 
     ScaLapackLiteMatrix() = new(ScaLapackLiteParams())
     ScaLapackLiteMatrix(params) = new(params)
     ScaLapackLiteMatrix(params, X) = new(params, X)
@@ -40,7 +40,7 @@ end
 
 # perform A'
 function Base.:(adjoint)(A::ScaLapackLiteMatrix)
-    return ScaLapackLiteMatrix(A.params, A.X') 
+    return ScaLapackLiteMatrix(A.params, transpose(A.X)) 
 end
 
 # perform A*B
@@ -51,6 +51,32 @@ function Base.:(*)(A::ScaLapackLiteMatrix, B::ScaLapackLiteMatrix)
         return ScaLapackLiteMatrix(A.params, C)
     else
         throw(DimensionMismatch("ScaLapackLiteMatrix A and B have different ScaLapaclLiteParams"))
+    end
+end
+
+#--- generate identity matrix ---#
+for (elty) in (:Float32, :Float64, :ComplexF32, :ComplexF64)
+    @eval begin
+        function zero!(A::Matrix{$elty}, m::ScaInt, n::ScaInt, desc::Vector{ScaInt})
+            uplo = 'A'
+            α = convert($elty, 0); β = convert($elty, 1);
+            ia = convert(ScaInt, 1); ja = convert(ScaInt, 1);
+            ScaLapack.pXlaset!(uplo, m, n,
+                               α, β,
+                               A, ia, ja, desc)
+        end
+    end
+end
+for (elty) in (:Float32, :Float64, :ComplexF32, :ComplexF64)
+    @eval begin
+        function identity!(I::Matrix{$elty}, m::ScaInt, n::ScaInt, desc::Vector{ScaInt})
+            uplo = 'A'
+            α = convert($elty, 0); β = convert($elty, 1);
+            ia = convert(ScaInt, 1); ja = convert(ScaInt, 1);
+            ScaLapack.pXlaset!(uplo, m, n,
+                               α, β,
+                               I, ia, ja, desc)
+        end
     end
 end
 
@@ -265,8 +291,8 @@ function hessenberg(sllm_A::ScaLapackLiteMatrix, reduced::Bool = true)
 
 end     # function
 
-#--- find eigenvalues ---#
-function eigs(sllm_A::ScaLapackLiteMatrix)
+#--- Schur decomposition ---#
+function schur(sllm_A::ScaLapackLiteMatrix, get_T::Bool = true)
 
     # assume: ScaLapackLiteParams must be correctly given for all processes
     params = sllm_A.params
@@ -323,6 +349,16 @@ function eigs(sllm_A::ScaLapackLiteMatrix)
                             A, one, one, desc,
                             myA, one, one, desc_my,
                             ctxt)
+        # prepare identity matrix for generate orthogonal Q matrix at next step
+        myQ = Matrix{elty}(undef, mxlocr, mxlocc)
+        identity!(myQ, m, n, desc_my)
+        # prepare identity matrix for generate orthogonal S matrix
+        myS = Matrix{elty}(undef, mxlocr, mxlocc)
+        identity!(myS, m, n, desc_my)
+        # prepare global matrix Z for store Schur vectors
+        # prepare local matrix myZ for store local Schur vectors
+        Z = zeros(elty, m, n)
+        myZ = zeros(elty, mxlocr, mxlocc)
 
         # balancing
         job = 'B'
@@ -336,22 +372,12 @@ function eigs(sllm_A::ScaLapackLiteMatrix)
         numblocks = mblocks
         rsrc_a = zero
         csrc_a = zero
-
         # find hessenberg matrix: H of A = Q * H * Q^H
         ia = 1; ja = 1;
         τ = zeros(elty, ScaLapack.numroc(ja+n-2, numblocks, mycol, csrc_a, nprocs))
         ScaLapack.pXgehrd!(m, ilo, ihi,
                            myA, ia, ja, desc_my,
                            τ)
-
-        # prepare identity matrix for generate orthogonal Q matrix
-        uplo = 'A'
-        α = convert(elty, zero); β = convert(elty, one);
-        ia = 1; ja = 1;
-        myQ = Matrix{elty}(undef, mxlocr, mxlocc)
-        ScaLapack.pXlaset!(uplo, m, n,
-                           α, β,
-                           myQ, ia, ja, desc_my)
 
         # generate orthogonal Q matrix; Q = Q * I
         # the orthogonal matrix Q is generated from the non-reduced Hessenberg matrix myA
@@ -371,16 +397,11 @@ function eigs(sllm_A::ScaLapackLiteMatrix)
         ScaLapack.pXlaset!(uplo, m-2, n-2,
                            α, β,
                            myA, ia, ja, desc_my)
-                   
         # perform Schur decomposition: H = S * T * S^H
         # its eigenvalues ( = diag(T) ) are stored into the w
-        wantt = true; wantz = true;
+        # if wantt = true: myA will be overwitten to T
+        wantt = get_T; wantz = true;
         w = zeros(elty, m)
-        myS = Matrix{elty}(undef, mxlocr, mxlocc)
-        α = convert(elty, zero); β = convert(elty, one);
-        ScaLapack.pXlaset!(uplo, m, n,
-                           α, β,
-                           myS, ia, ja, desc_my)
         # for real input
         if elty == Float32 || elty == Float64
             wr = zeros(elty, m); wi = zeros(elty, m)
@@ -397,7 +418,7 @@ function eigs(sllm_A::ScaLapackLiteMatrix)
                                ilo, ihi, myS, desc_my)
         end
 
-        # calc Schur vector of A: Z = Q * S
+        # calc Schur vector of Z = Q * S
         #   that is because of: A = Q * H * Q^H = Q*S * T * (Q*S)^H
         transa = 'n'; transb = 'n';
         α = convert(elty, one); β = convert(elty, zero);
@@ -408,13 +429,20 @@ function eigs(sllm_A::ScaLapackLiteMatrix)
                           myQ, ia, ja, desc_my,
                           myS, ia, ja, desc_my,
                           β,
-                          myA, ia, ja, desc_my)
+                          myZ, ia, ja, desc_my)
 
         # merge local Schur vectors matrix to global
         ScaLapack.pXgemr2d!(m, n,
-                            myA, one, one, desc_my,
-                            A, one, one, desc,
+                            myZ, one, one, desc_my,
+                            Z, one, one, desc,
                             ctxt0)
+        # merge local upper quasi-triangular matrix T
+        if get_T
+            ScaLapack.pXgemr2d!(m, n,
+                                myA, one, one, desc_my,
+                                A, one, one, desc,
+                                ctxt0)
+        end
 
     end
 
@@ -425,11 +453,13 @@ function eigs(sllm_A::ScaLapackLiteMatrix)
 
     # free
     if rank != rootproc
-        A = Matrix{elty}(undef, 0, 0)
         w = Vector{elty}(undef, 0)
+        Z = Matrix{elty}(undef, 0, 0)
+        A = Matrix{elty}(undef, 0, 0)
     end
 
-    return (w, A)
+    if get_T; return (w, ScaLapackLiteMatrix(params, Z), ScaLapackLiteMatrix(params, A));
+    else; return (w, ScaLapackLiteMatrix(params, Z)); end;
 
 end
 

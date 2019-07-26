@@ -78,7 +78,7 @@ function mutiple_test(root, comm)
 
 end
 
-function hessenberg_test(root, comm)
+function schur_test(root, comm)
     rank = MPI.Comm_rank(comm)
     nproc = MPI.Comm_size(comm)
     MPI.Barrier(comm);
@@ -93,6 +93,8 @@ function hessenberg_test(root, comm)
     slm_A = ScaLapackLite.ScaLapackLiteMatrix(params, A)
 
     if rank == root
+        # reference: original matrix A
+        A_ref = deepcopy(A)
         # reference: LAPACK routine
         (eig_ref,eigvec_ref)=LinearAlgebra.eigen(A)
     end
@@ -100,7 +102,14 @@ function hessenberg_test(root, comm)
     # slm_hA = ScaLapackLite.hessenberg(slm_A, true)
     # print("[$rank] A: $(slm_hA.X)\n")
 
-    (eig,schurvec) = ScaLapackLite.eigs(slm_A)
+    # perform Schur decomposition and en-return T
+    (eig, slm_Z, slm_T) = ScaLapackLite.schur(slm_A, true)
+
+    # CHECK: recompose A from Schur vectors Z; A = Z * T * Z^H
+    slm_A_ = slm_Z * slm_T * slm_Z'
+    if rank == root
+        frobenius_norm = norm(slm_A_.X-A_ref, 2)
+    end
 
     if rank == root
         eidx=sortperm(real(eig))
@@ -110,26 +119,30 @@ function hessenberg_test(root, comm)
         print("\n--- eigenvalues ---\n")
         wlines = "\nindex / eig(ScaLapackLite) / eig(LAPACK) / | eig(ScaLapackLite)-eig(LAPACK) |\n"
         for idx = 1:nrows
-            wlines*= @sprintf("  %s / %s + i %s / %s + i %s / %s\n",
+            wlines *= @sprintf("  %s / %s + i %s / %s + i %s / %s\n",
                           lpad(idx, 3, "0"),
                           prtf(real(eig[eidx[idx]])), prtf(imag(eig[eidx[idx]])),
                           prtf(real(eig_ref[eidx_ref[idx]])), prtf(imag(eig_ref[eidx_ref[idx]])),
                           prtf(diff[idx]))
         end
-        wlines*="\n"; print(wlines);
+        wlines *= "\n"; print(wlines);
 
         print("\n--- Schur / eigen vectors ---\n")
+
+        wline = @sprintf("\nFrobenius norm: || Z * T * Z^H - A ||_{2} = %s\n", prtf(frobenius_norm))
+        print(wline)
+
         for jdx = 1:ncols
             print("\n[$jdx-th vec]:\n")
             wlines = "\nindex / Schur vector (ScaLapackLite) / eig vector (LAPACK)\n"
             for idx = 1:nrows
-                wlines*= @sprintf("  %s / %s / %s + i %s\n",
+                wlines *= @sprintf("  %s / %s / %s + i %s\n",
                             lpad(idx, 3, "0"),
-                            prtf(schurvec[idx, eidx[jdx]]),
+                            prtf(slm_Z.X[idx, eidx[jdx]]),
                             prtf(real(eigvec_ref[idx,eidx_ref[jdx]])),
                             prtf(imag(eigvec_ref[idx,eidx_ref[jdx]])))
             end
-            wlines*="\n"; print(wlines);
+            wlines *= "\n"; print(wlines);
         end
 
     end
@@ -143,7 +156,7 @@ function main()
     finalizer(mpi_finalizer, comm)
     # test
     # mutiple_test(0, comm)
-    hessenberg_test(0, comm)
+    schur_test(0, comm)
 end
 
 main()
