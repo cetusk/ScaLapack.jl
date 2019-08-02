@@ -22,7 +22,7 @@ const nprocrows = 2
 const nproccols = 2
 
 # test type
-const testtype = ComplexF64
+const testtype = Float64
 
 # finalizer
 function mpi_finalizer(comm)
@@ -176,8 +176,8 @@ function eig_test(root, comm)
     A = Matrix{testtype}(undef, nrows, ncols)
     for ia::Integer = 1 : nrows
         for ja::Integer = 1 : ncols
-            # A[ia, ja] = convert(testtype, rand())
-            A[ia, ja] = convert(testtype, rand()+im*rand())
+            A[ia, ja] = convert(testtype, rand())
+            # A[ia, ja] = convert(testtype, rand()+im*rand())
         end
     end
     A_copied = deepcopy(A)
@@ -192,6 +192,10 @@ function eig_test(root, comm)
     # find eigenvalues and eigenvectors
     eigidx = Vector{Int64}([])
     (eigvals, eigvecs) = ScaLapackLite.eigen(slm_A, eigidx, false)
+
+    testtype_e = testtype
+    if testtype == Float32; testtype_e = ComplexF32;
+    elseif testtype == Float64; testtype_e = ComplexF64; end
 
     if rank == root
         eidx = sortperm(real(eigvals))
@@ -211,8 +215,8 @@ function eig_test(root, comm)
         for jdx = 1:ncols
 
             # calc error
-            x = Vector{testtype}(eigvecs[:,eidx[jdx]])
-            x_ref = Vector{testtype}(eigvecs_ref[:,eidx_ref[jdx]])
+            x = Vector{testtype_e}(eigvecs[:,eidx[jdx]])
+            x_ref = Vector{testtype_e}(eigvecs_ref[:,eidx_ref[jdx]])
             ej = eigvals[eidx[jdx]]
             ej_ref = eigvals_ref[eidx_ref[jdx]]
             error = norm(A_copied*x - ej*x, 2)

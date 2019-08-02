@@ -358,9 +358,7 @@ function schur(sllm_A::ScaLapackLiteMatrix, force_complex::Bool = false, get_T::
 
     # type of the matrix H
     elty = typeof(sllm_H.X[1,1])
-    elty_s = elty_w = elty_e = elty
-    if elty == ComplexF32; elty_s = Float32;
-    elseif elty == ComplexF64; elty_s = Float64; end
+    elty_w = elty_e = elty
     if elty == Float32; elty_w = ComplexF32;
     elseif elty == Float64; elty_w = ComplexF64; end
     if force_complex; elty_e = elty_w; end
@@ -426,7 +424,7 @@ function schur(sllm_A::ScaLapackLiteMatrix, force_complex::Bool = false, get_T::
         ilo = one; ihi = m;
         w = zeros(elty_w, m)
         # for real input
-        if elty == Float32 || elty == Float64
+        if elty_e == Float32 || elty_e == Float64
             wr = zeros(elty, m); wi = zeros(elty, m)
             ScaLapack.pXlahqr!(wantt, wantz, m,
                                ilo, ihi, myH, desc_myH,
@@ -434,7 +432,7 @@ function schur(sllm_A::ScaLapackLiteMatrix, force_complex::Bool = false, get_T::
                                ilo, ihi, myQ, desc_myQ)
             w = wr + im*wi
         # for complex input
-        elseif elty == ComplexF32 || elty == ComplexF64
+        elseif elty_e == ComplexF32 || elty_e == ComplexF64
             ScaLapack.pXlahqr!(wantt, wantz, m,
                                ilo, ihi, myH, desc_myH,
                                w,
@@ -496,9 +494,7 @@ function eigen(sllm_A::ScaLapackLiteMatrix, eidx::Vector{ScaInt} = [], is_leftsi
 
     # type of the matrix T
     elty = typeof(sllm_T.X[1,1])
-    elty_s = elty; elty_ev = elty;
-    if elty == ComplexF32; elty_s = Float32;
-    elseif elty == ComplexF64; elty_s = Float64; end
+    elty_ev = elty;
     if elty == Float32; elty_ev = ComplexF32;
     elseif elty == Float64; elty_ev = ComplexF64; end
 

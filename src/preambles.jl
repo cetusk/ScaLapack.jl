@@ -12,8 +12,7 @@ f_pchar(scope::Char) = transcode(UInt8, string(scope))
 f_pstring(scope::String) = transcode(UInt8, string(scope))
 
 # path to scalapack dynamic library
-const libscalapack = "/home/k0324/k032403/.julia/packages/ScaLapack/lib/libscalapack.so"
-# const libscalapack = "/usr/local/Cellar/scalapack/2.0.2_15/lib/libscalapack.dylib"
+const libscalapack = "/usr/local/Cellar/scalapack/2.0.2_15/lib/libscalapack.dylib"
 # depend on envionment
 # const ScaInt = Int32
 const ScaInt = Int64
