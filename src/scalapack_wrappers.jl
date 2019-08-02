@@ -1,6 +1,9 @@
 
-# input : num of rows and cols in the process grid
-# output: BLACS context
+#--- input
+#   nprow : [global] : num of rows in the process grid
+#   npcol : [global] : num of cols in the process grid
+#--- output
+#   ctxt  : [global] : BLACS context
 function sl_init(nprow::ScaInt, npcol::ScaInt)
     ctxt = zeros(ScaInt,1)
     ccall((:sl_init_, libscalapack), Nothing,
@@ -9,41 +12,51 @@ function sl_init(nprow::ScaInt, npcol::ScaInt)
     return ctxt[1]
 end
 
-# input : num of rows/cols, num of rows/cols in its block
-#         num of process rows and cols in the current process id
-#         head grid address of its process grid
-#         num of process grid
-# output: num of process rows and cols in the current process id
+#--- input
+#   n        : [global] : num of rows/cols
+#   nb       : [global] : num of rows/cols in its block
+#   iproc    : [global] : num of process rows and cols in the current process id
+#   isrcproc : [global] : head grid address of its process grid
+#   nprocs   : [global] : num of process grid
+#--- output
+#              [global] : num of process rows and cols in the current process id
 function numroc(n::ScaInt, nb::ScaInt, iproc::ScaInt, isrcproc::ScaInt, nprocs::ScaInt)
     return ccall((:numroc_, libscalapack), ScaInt,
                 (Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}),
                 Ref(n), Ref(nb), Ref(iproc), Ref(isrcproc), Ref(nprocs))
 end
 
-# input : num of rows/cols, num of rows/cols in its block
-#         head grid address of its process grid
-#         BLACS context, maximum local leading dimension ( mxlld )
-# output: array descriptor
+#--- input
+#   m/n         : [global] : num of rows/cols
+#   mb/nb       : [global] : num of rows/cols in its block
+#   irsrc/icsrc : [global] : head of row/col grid address of its process grid
+#   ictxt       : [global] : BLACS context
+#   lld         : [global] : local leading dimension
+#--- output
+#   desc        : [global] : array descriptor of the local matrix
 function descinit(m::ScaInt, n::ScaInt, mb::ScaInt, nb::ScaInt, irsrc::ScaInt, icsrc::ScaInt, ictxt::ScaInt, lld::ScaInt)
-    desc = zeros(ScaInt,9)
-    info = zeros(ScaInt,1)
+    desc = zeros(ScaInt, 9)
+    info = zeros(ScaInt, 1)
     ccall((:descinit_, libscalapack), Nothing,
-        (Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
-         Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
-         Ptr{ScaInt}, Ptr{ScaInt}),
-        desc, Ref(m), Ref(n), Ref(mb),
-        Ref(nb), Ref(irsrc), Ref(icsrc), Ref(ictxt),
-        Ref(lld), info)
+            (Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
+            Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
+            Ptr{ScaInt}, Ptr{ScaInt}),
+            desc, Ref(m), Ref(n), Ref(mb),
+            Ref(nb), Ref(irsrc), Ref(icsrc), Ref(ictxt),
+            Ref(lld), info)
     if info[1] < 0
         error("input argument $(info[1]) has illegal value")
     end
     return desc
 end
 
-# input : row/col index in the global array A indicating the first row of sub(A)
-#         ( will be updated ! ) array descriptor for the distributed matrix A
-#         scalar alpha which will be substituted into the A
-# output: nothing
+#--- input 
+#   A     : [global] : ( will be updated ! ) input matrix
+#   ia/ja : [global] : first row/col index in the global matrix A
+#   desca : [global] : descriptor of the local matrix A
+#   α     : [global] : scalar value to substitute into the A
+#--- output
+#                      nothing
 for (fname, elty) in ((:pselset_, :Float32),
                       (:pdelset_, :Float64),
                       (:pcelset_, :ComplexF32),
@@ -57,12 +70,14 @@ for (fname, elty) in ((:pselset_, :Float32),
     end
 end
 
-# input : BLACS scope in which alpha is returned
-#         topology to be used if broadcast is needed
-#         distributed matrix A
-#         row/col index in the global array A
-#         array descriptor for the distributed matrix A
-# output: scalar alpha which will be returned from the A
+#--- input
+#   scope : [global] : BLACS scope in which alpha is returned
+#   top   : [global] : topology to be used if broadcast is needed
+#   A     : [local]  : local matrix
+#   ia/ja : [global] : first row/col index in the global matrix A
+#   desca : [global] : descriptor of the local matrix A
+#--- output
+#   α     : [local]  : scalar value which will be returned from the A
 for (fname, elty) in ((:pselget_, :Float32),
                       (:pdelget_, :Float64),
                       (:pcelget_, :ComplexF32),
@@ -198,9 +213,7 @@ end
 
 #
 for (fname, elty, elty_s) in ((:psgebal_, :Float32, :Float32),
-                              (:pdgebal_, :Float64, :Float64),
-                              (:pcgebal_, :ComplexF32, :Float32),
-                              (:pzgebal_, :ComplexF64, :Float64))
+                              (:pdgebal_, :Float64, :Float64))
     @eval begin
         function pXgebal!(job::Char, n::ScaInt,
                           A::Matrix{$elty}, desca::Vector{ScaInt}, ilo::ScaInt, ihi::ScaInt,
@@ -236,7 +249,7 @@ end
 # output: nothing
 # === detail ===
 # the "τ" meaning:
-#     dim(τ) = numroc(ja+n-2,numblocks,mycol,csrc_a,nproccols)
+#     dim(τ) = numroc(ja+n-2,numblocks,mycol,csrc_a,npcolcols)
 #     τ[ja+ilo-1:ja+ihi-2] = the scalar factors of the elementary reflectors
 #     τ[ja:ja+ilo-2] = τ[ja+ihi-1:ja+n-2] = 0
 # the "work" meaning:
@@ -253,15 +266,15 @@ end
 #           iroffa = (ia-1) % numblocks
 #           icoffa = (ja-1) % numblocks
 #           ioff = (ia+ilo-2) % numblocks
-#           iarow = indxg2p(ia,numblocks,myrow,rsrc_a,nprocrows)
-#                 = (rsrc_a+(ia-1)/numblocks) % nprocrows
-#           ihip = numroc(ihi+iroffa,numblocks,myrow,iarow,nprocrows)
-#           ilrow = indxg2p(ia+ilo-1,numblocks,myrow,rsrc_a,nprocrows)
-#                 = (rsrc_a+(ia+ilo-2)/numblocks) % nprocrows
-#           ihlp = numroc(ihi-ilo+ioff+1,numblocks,myrow,ilrow,nprocrows)
-#           ilcol = indxg2p(ja+ilo-1,numblocks,mycol,csrc_a,nprococls)
-#                 = (csrc_a+(ja+ilo-2)/numblocks) % nproccols
-#           inlq = numroc(n-ilo+ioff+1,numblocks,mycol,ilcol,nproccols)
+#           iarow = indxg2p(ia,numblocks,myrow,rsrc_a,npcolrows)
+#                 = (rsrc_a+(ia-1)/numblocks) % npcolrows
+#           ihip = numroc(ihi+iroffa,numblocks,myrow,iarow,npcolrows)
+#           ilrow = indxg2p(ia+ilo-1,numblocks,myrow,rsrc_a,npcolrows)
+#                 = (rsrc_a+(ia+ilo-2)/numblocks) % npcolrows
+#           ihlp = numroc(ihi-ilo+ioff+1,numblocks,myrow,ilrow,npcolrows)
+#           ilcol = indxg2p(ja+ilo-1,numblocks,mycol,csrc_a,npcolocls)
+#                 = (csrc_a+(ja+ilo-2)/numblocks) % npcolcols
+#           inlq = numroc(n-ilo+ioff+1,numblocks,mycol,ilcol,npcolcols)
 for (fname, elty) in ((:psgehrd_, :Float32),
                       (:pdgehrd_, :Float64),
                       (:pcgehrd_, :ComplexF32),
@@ -369,10 +382,10 @@ end
 # the "work" meaning:
 #     dim(work) = lwork
 # the "lwork" meaning:
-#     lwork >= 3*n + max(2*max(lld_z,lld_a)+2*locc(n),7*ceil(n/hbl)/lcm(nprocrows,nproccols))
+#     lwork >= 3*n + max(2*max(lld_z,lld_a)+2*locc(n),7*ceil(n/hbl)/lcm(npcolrows,npcolcols))
 #     where:
 #           lld_z = descz[9], lld_a = desca[9], csrc_a = desca[8]
-#           locc(n) = numroc(n,numblocks,mycol=nproc,csrc_a,nproccols)
+#           locc(n) = numroc(n,numblocks,mycol=npcol,csrc_a,npcolcols)
 #           hbl = numblocks ( = mblocks = nblocks )
 for (fname, elty) in ((:pslaqr1_, :Float32),
                       (:pdlaqr1_, :Float64))
@@ -440,14 +453,14 @@ for (fname, elty) in ((:pclahqr_, :ComplexF32),
             # j = 2 for perform ccall
             for j = 1:2                
                 ccall(($(string(fname)), libscalapack), Nothing,
-                        (Ptr{ScaInt}, Ptr{ScaInt},
+                        (Ptr{Bool}, Ptr{Bool},
                         Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
                         Ptr{$elty}, Ptr{ScaInt},
                         Ptr{$elty},
                         Ptr{ScaInt}, Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt},
                         Ptr{$elty}, Ptr{ScaInt}, Ptr{ScaInt}, Ptr{ScaInt},
                         Ptr{ScaInt}),
-                        Ref(convert(ScaInt, wantt)), Ref(convert(ScaInt, wantz)),
+                        Ref(wantt), Ref(wantz),
                         Ref(n), Ref(ilo), Ref(ihi),
                         A, desca, w,
                         Ref(iloz), Ref(ihiz), Z, descz,
@@ -466,6 +479,43 @@ for (fname, elty) in ((:pclahqr_, :ComplexF32),
                 error("input argument $(info[1]) has illegal value")
             end
 
+        end
+    end
+end
+
+#
+for (fname, elty, elty_r) in ((:pctrevc_, :ComplexF32, :Float32),
+                              (:pztrevc_, :ComplexF64, :Float64))
+    @eval begin
+        function pXtrevc!(side::Char, howmny::Char, select::Vector{Bool},
+                           n::ScaInt, T::Matrix{$elty}, desct::Vector{ScaInt},
+                           vl::Matrix{$elty}, descvl::Vector{ScaInt}, vr::Matrix{$elty}, descvr::Vector{ScaInt})
+
+            # inner variables
+            info = zeros(ScaInt, 1)
+            mm = n
+            work = zeros($elty, 2*n)
+            rwork = zeros($elty_r, n)
+            # output variable
+            m = zeros(ScaInt, 1)
+            ccall(($(string(fname)), libscalapack), Nothing,
+                    (Ptr{Char}, Ptr{Char}, Ptr{Bool},
+                    Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt},
+                    Ptr{$elty}, Ptr{ScaInt}, Ptr{$elty}, Ptr{ScaInt},
+                    Ptr{ScaInt}, Ptr{ScaInt},
+                    Ptr{$elty}, Ptr{$elty_r}, Ptr{ScaInt}),
+                    f_pchar(side), f_pchar(howmny), select,
+                    Ref(n), T, desct,
+                    vl, descvl, vr, descvr,
+                    Ref(mm), m,
+                    work, rwork, info)
+
+            if info[1] < 0
+                error("input argument $(info[1]) has illegal value")
+            end
+
+            return m[1]
+            
         end
     end
 end

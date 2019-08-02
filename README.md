@@ -72,7 +72,7 @@ params = ScaLapackLite.ScaLapackLiteParams(nrows_block, ncols_block, nprocrows, 
 slm_A = ScaLapackLite.ScaLapackLiteMatrix(params, A)
 slm_B = ScaLapackLite.ScaLapackLiteMatrix(params, B)
 ```
-### _5. perform C = AB and extract result_ ###
+### _5. perform C = A * B^T and extract result_ ###
 ```
 slm_C = slm_A * slm_B'
 C = slm_C.X

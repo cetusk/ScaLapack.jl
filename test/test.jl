@@ -7,7 +7,7 @@ using LinearAlgebra
 
 # for DEBUG
 using Printf
-const DEBUG = false
+const DEBUG = true
 function prtf(x)
     if x < 0; s = @sprintf("%.7f", x);
     else s = @sprintf(" %.7f", x); end;
@@ -20,6 +20,9 @@ const nrows_block = 6
 const ncols_block = 6
 const nprocrows = 2
 const nproccols = 2
+
+# test type
+const testtype = ComplexF64
 
 # finalizer
 function mpi_finalizer(comm)
@@ -34,8 +37,8 @@ function mutiple_test(root, comm)
 
     # generate matrix
     if rank == 0
-        A = Matrix{Float64}(undef, nrows, ncols)
-        B = Matrix{Float64}(undef, nrows, ncols)
+        A = Matrix{testtype}(undef, nrows, ncols)
+        B = Matrix{testtype}(undef, nrows, ncols)
         for ia::Integer = 1 : nrows
             for ja::Integer = 1 : ncols
                 A[ia, ja] = convert(Float64, ia+ja)
@@ -43,8 +46,8 @@ function mutiple_test(root, comm)
             end
         end
     else
-        A = Matrix{Float64}(undef, 0, 0)
-        B = Matrix{Float64}(undef, 0, 0)
+        A = Matrix{testtype}(undef, 0, 0)
+        B = Matrix{testtype}(undef, 0, 0)
     end
     MPI.Barrier(comm)
 
@@ -78,15 +81,33 @@ function mutiple_test(root, comm)
 
 end
 
+function hessenberg_test(root, comm)
+    rank = MPI.Comm_rank(comm)
+    nproc = MPI.Comm_size(comm)
+    MPI.Barrier(comm);
+
+    A = Matrix{testtype}(undef, nrows, ncols)
+    for ia::Integer = 1 : nrows
+        for ja::Integer = 1 : ncols
+            A[ia, ja] = convert(testtype, rand())
+        end
+    end
+    params = ScaLapackLite.ScaLapackLiteParams(nrows_block, ncols_block, nprocrows, nproccols, root)
+    slm_A = ScaLapackLite.ScaLapackLiteMatrix(params, A)
+
+    slm_hA = ScaLapackLite.hessenberg(slm_A, true)
+    print("[$rank] A: $(slm_hA.X)\n")
+end
+
 function schur_test(root, comm)
     rank = MPI.Comm_rank(comm)
     nproc = MPI.Comm_size(comm)
     MPI.Barrier(comm);
 
-    A = Matrix{Float64}(undef, nrows, ncols)
+    A = Matrix{testtype}(undef, nrows, ncols)
     for ia::Integer = 1 : nrows
         for ja::Integer = 1 : ncols
-            A[ia, ja] = convert(Float64, rand())
+            A[ia, ja] = convert(testtype, rand())
         end
     end
     params = ScaLapackLite.ScaLapackLiteParams(nrows_block, ncols_block, nprocrows, nproccols, root)
@@ -98,9 +119,6 @@ function schur_test(root, comm)
         # reference: LAPACK routine
         (eig_ref,eigvec_ref)=LinearAlgebra.eigen(A)
     end
-
-    # slm_hA = ScaLapackLite.hessenberg(slm_A, true)
-    # print("[$rank] A: $(slm_hA.X)\n")
 
     # perform Schur decomposition and en-return T
     (eig, slm_Z, slm_T) = ScaLapackLite.schur(slm_A, true)
@@ -127,7 +145,7 @@ function schur_test(root, comm)
         end
         wlines *= "\n"; print(wlines);
 
-        print("\n--- Schur / eigen vectors ---\n")
+        print("\n--- Schur vectors / eigen vectors ---\n")
 
         wline = @sprintf("\nFrobenius norm: || Z * T * Z^H - A ||_{2} = %s\n", prtf(frobenius_norm))
         print(wline)
@@ -136,11 +154,80 @@ function schur_test(root, comm)
             print("\n[$jdx-th vec]:\n")
             wlines = "\nindex / Schur vector (ScaLapackLite) / eig vector (LAPACK)\n"
             for idx = 1:nrows
-                wlines *= @sprintf("  %s / %s / %s + i %s\n",
+                wlines *= @sprintf("  %s / %s + i %s / %s + i %s\n",
                             lpad(idx, 3, "0"),
-                            prtf(slm_Z.X[idx, eidx[jdx]]),
+                            prtf(real(slm_Z.X[idx, eidx[jdx]])),
+                            prtf(imag(slm_Z.X[idx, eidx[jdx]])),
                             prtf(real(eigvec_ref[idx,eidx_ref[jdx]])),
                             prtf(imag(eigvec_ref[idx,eidx_ref[jdx]])))
+            end
+            wlines *= "\n"; print(wlines);
+        end
+
+    end
+
+end
+
+function eig_test(root, comm)
+    rank = MPI.Comm_rank(comm)
+    nproc = MPI.Comm_size(comm)
+    MPI.Barrier(comm);
+
+    A = Matrix{testtype}(undef, nrows, ncols)
+    for ia::Integer = 1 : nrows
+        for ja::Integer = 1 : ncols
+            # A[ia, ja] = convert(testtype, rand())
+            A[ia, ja] = convert(testtype, rand()+im*rand())
+        end
+    end
+    A_copied = deepcopy(A)
+    params = ScaLapackLite.ScaLapackLiteParams(nrows_block, ncols_block, nprocrows, nproccols, root)
+    slm_A = ScaLapackLite.ScaLapackLiteMatrix(params, A)
+
+    if rank == root
+        # reference: LAPACK routine
+        (eigvals_ref,eigvecs_ref)=LinearAlgebra.eigen(A)
+    end
+
+    # find eigenvalues and eigenvectors
+    eigidx = Vector{Int64}([])
+    (eigvals, eigvecs) = ScaLapackLite.eigen(slm_A, eigidx, false)
+
+    if rank == root
+        eidx = sortperm(real(eigvals))
+        eidx_ref = sortperm(real(eigvals_ref))
+
+        print("\n--- eigenvalues ---\n")
+        wlines = "\nindex / eig(ScaLapackLite) / eig(LAPACK)\n"
+        for idx = 1:nrows
+            wlines *= @sprintf("  %s / %s + i %s / %s + i %s\n",
+                          lpad(idx, 3, "0"),
+                          prtf(real(eigvals[eidx[idx]])), prtf(imag(eigvals[eidx[idx]])),
+                          prtf(real(eigvals_ref[eidx_ref[idx]])), prtf(imag(eigvals_ref[eidx_ref[idx]])))
+        end
+        wlines *= "\n"; print(wlines);
+
+        print("\n--- eigv(ScaLapackLite) / eigv(LAPACK) ---\n")
+        for jdx = 1:ncols
+
+            # calc error
+            x = Vector{testtype}(eigvecs[:,eidx[jdx]])
+            x_ref = Vector{testtype}(eigvecs_ref[:,eidx_ref[jdx]])
+            ej = eigvals[eidx[jdx]]
+            ej_ref = eigvals_ref[eidx_ref[jdx]]
+            error = norm(A_copied*x - ej*x, 2)
+            error_ref = norm(A_copied*x_ref - ej_ref*x_ref, 2)
+            wlines = @sprintf("\nlog10(|| Ax - λx ||)[ScaLapackLite] = %s\nlog10(|| Ax - λx ||)[LAPACK]        = %s\n",
+                               prtf(log10(error)), prtf(log10(error_ref)))
+
+            print("\n[$jdx-th vec]:\n")
+            print(wlines)
+            wlines = "\nindex / eigv(ScaLapackLite) / eigv(LAPACK)\n"
+            for idx = 1:nrows
+                wlines *= @sprintf("  %s / %s + i %s / %s + i %s\n",
+                            lpad(idx, 3, "0"),
+                            prtf(real(eigvecs[idx, eidx[jdx]])), prtf(imag(eigvecs[idx, eidx[jdx]])),
+                            prtf(real(eigvecs_ref[idx, eidx_ref[jdx]])), prtf(imag(eigvecs_ref[idx, eidx_ref[jdx]])))
             end
             wlines *= "\n"; print(wlines);
         end
@@ -156,7 +243,9 @@ function main()
     finalizer(mpi_finalizer, comm)
     # test
     # mutiple_test(0, comm)
-    schur_test(0, comm)
+    # hessenberg_test(0, comm)
+    # schur_test(0, comm)
+    eig_test(0, comm)
 end
 
 main()
